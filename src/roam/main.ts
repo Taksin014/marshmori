@@ -25,7 +25,7 @@ const applyLook = useLook(() => look);
 
 const view = new RoamView(root, box, roamer, {
   onRects: (rects) => void api.roamSetHitRects(rects).catch(() => {}),
-  onAction: (action) => void act(action),
+  onAction: (action, answer) => void act(action, answer),
 });
 
 // The first frame of a trip is on the canvas: now Rust can show the window, and the
@@ -43,9 +43,21 @@ roamer.onHome = () => {
   void api.roamDone(trip).catch(() => {});
 };
 
-async function act(action: RoamAction) {
+async function act(action: RoamAction, answer?: string) {
   const req = roamer.request;
   if (!req) return;
+  // A question answered right at the pointer: its one choice goes back to the agent.
+  if (action === "answer") {
+    const q = req.questions?.[0];
+    if (req.approvalId == null || !q || !answer) return;
+    roamer.celebrate("happy");
+    try {
+      await api.answer(req.approvalId, { [q.question]: answer });
+    } catch {
+      // Already answered somewhere else, or it ran out of time.
+    }
+    return;
+  }
   if (action === "open") {
     void api.roamOpen().catch(() => {});
     roamer.home();

@@ -28,6 +28,7 @@ import {
   AGENT_SKINS,
   PROVIDER_LABELS,
   STATE_LABELS,
+  type Answers,
   type ApprovalView,
   type ChatProviderSetting,
   type FileInfo,
@@ -43,6 +44,7 @@ import {
 } from "../core/types";
 import type { ColorName, ExpressionName } from "../mascot/expressions";
 import { Marshmori } from "../mascot/marsh";
+import { answerOf, answersOf, draftFor, keepDrafts, pick } from "./question";
 import { createTasks, type Dropped } from "./tasks";
 
 type Level = "tuck" | "peek" | "compact" | "open";
@@ -476,6 +478,13 @@ const CALM: Step = {
   h: { stiffness: 150, damping: 16 },
   seat: { stiffness: 140, damping: 14 },
 };
+/**
+ * Windows' "Animation effects" off (prefers-reduced-motion): no bounce, swell or hop,
+ * but no hard jumps either. The island glides to its new size in about a quarter of a
+ * second and settles without overshooting, so a card coming up still reads as one
+ * calm motion instead of a flash.
+ */
+const GENTLE: Step = { w: feel(280, 1), h: feel(280, 1), seat: feel(280, 1) };
 /** How much wider and taller the island swells while the pointer waits. */
 const SWELL_W = 24;
 const SWELL_H = 6;
@@ -505,7 +514,8 @@ function layout() {
   openEl.classList.toggle("on", level === "open");
   const growing = RANK[level] > RANK[laidLevel];
   const shrinking = RANK[level] < RANK[laidLevel];
-  const hint = state.hint && level !== "open";
+  const gentle = reducedMotion();
+  const hint = state.hint && level !== "open" && !gentle;
   const hintChanged = hint !== laidHint;
   if (level === "open" && laidLevel !== "open") {
     // Its contents rise in one after another as it opens (island.css).
@@ -518,10 +528,9 @@ function layout() {
       if (!shape.moving) openEl.classList.remove("entering");
     }, 1000);
   }
-  const snap = reducedMotion();
   // Mamori out on the screen holds the island's edge with its hands: no wobble then.
   const calm = roam.away || roam.starting;
-  if (growing && !snap) {
+  if (growing && !gentle) {
     if (level === "open" && !calm) {
       // A little hop as it sets off, and a bob when it lands in its card.
       marsh.bump(0.8);
@@ -536,23 +545,27 @@ function layout() {
   laidLevel = level;
   laidHint = hint;
   const bounce = state.settings?.islandBounce ?? "boing";
-  const step: Step | null = growing
-    ? calm
-      ? CALM
-      : level === "open"
-        ? opening(bounce)
-        : popping(bounce)
-    : shrinking
-      ? SHRINK
-      : hintChanged
-        ? HINT
-        : null;
+  const step: Step | null = gentle
+    ? growing || shrinking
+      ? GENTLE
+      : null
+    : growing
+      ? calm
+        ? CALM
+        : level === "open"
+          ? opening(bounce)
+          : popping(bounce)
+      : shrinking
+        ? SHRINK
+        : hintChanged
+          ? HINT
+          : null;
   // A layout in the middle of a step (the panel's content settling in, the pill's text
   // changing) carries on with that step's feel, so it doesn't stiffen the bounce; its
   // delays only hold back the start of a step.
-  const now = step ?? (shape.moving ? stepping : RESIZE);
+  const now = step ?? (shape.moving ? stepping : gentle ? GENTLE : RESIZE);
   if (step) stepping = step;
-  const motion = (f: Feel) => ({ snap, stiffness: f.stiffness, damping: f.damping, delay: step ? f.delay : 0 });
+  const motion = (f: Feel) => ({ stiffness: f.stiffness, damping: f.damping, delay: step ? f.delay : 0 });
 
   let w = 56;
   let ht = 5;
@@ -658,14 +671,25 @@ function render() {
 let lastCompactHtml = "";
 let lastOpenHtml = "";
 
-/** Puts `nodes` into `el` unless the very same markup is already there. */
+/**
+ * Puts `nodes` into `el` unless the very same markup is already there. A field you are
+ * typing in (marked `data-keep`) keeps the keyboard and its caret when it is rebuilt.
+ */
 function patch(el: HTMLElement, nodes: Node[], last: string): string {
   const tmp = document.createElement("div");
   tmp.append(...nodes);
   const html = tmp.innerHTML;
   if (html !== last || el.childNodes.length === 0) {
+    const active = document.activeElement;
+    const keep = active instanceof HTMLInputElement && el.contains(active) ? active.dataset.keep : undefined;
+    const caret = keep && active instanceof HTMLInputElement ? [active.selectionStart ?? 0, active.selectionEnd ?? 0] : null;
     el.replaceChildren(...tmp.childNodes);
     armTimers(el);
+    const again = keep ? el.querySelector<HTMLInputElement>(`input[data-keep="${keep}"]`) : null;
+    if (again) {
+      again.focus({ preventScroll: true });
+      if (caret) again.setSelectionRange(caret[0], caret[1]);
+    }
   }
   return html;
 }
@@ -691,16 +715,58 @@ function armTimers(root: HTMLElement) {
 }
 
 function typingView(level: Level, view: View): View | null {
+  // Typing your own answer to a question ("อื่น ๆ") needs the keyboard too.
+  if (level === "open" && view === "approval") return frontQuestionTyping() ? "approval" : null;
   return level === "open" && (view === "chat" || view === "task") ? view : null;
 }
+
+/** The front card is a question and its "อื่น ๆ" box is open. */
+function frontQuestionTyping(): boolean {
+  const a = shownApprovals()[0];
+  return !!a?.questions && draftFor(a).typing !== null;
+}
+
+/** The card on screen last time (id and question), so a new one can slide in softly. */
+let lastCardKey = "";
+
+/**
+ * A new card taking the place of another while the panel is already open (the next
+ * approval, the next question of a card) fades and rises in, instead of popping in
+ * all at once. Opening the panel has its own entrance (island.css, "entering").
+ */
+function easeInNewCard(wasOpen: boolean) {
+  const card = state.view === "approval" ? openEl.querySelector<HTMLElement>(".card[data-card]") : null;
+  const key = card?.dataset.card ?? "";
+  if (card && key !== lastCardKey && wasOpen && lastCardKey !== "" && !openEl.classList.contains("entering")) {
+    const stepOnly = key.split(":")[0] === lastCardKey.split(":")[0];
+    // With reduced motion it only fades.
+    const still = reducedMotion();
+    const from = still ? "none" : stepOnly ? "translateX(14px)" : "translateY(8px) scale(0.985)";
+    for (const el of stepOnly ? card.querySelectorAll<HTMLElement>(".q-move") : [card]) {
+      el.animate(
+        [
+          { opacity: 0, transform: from },
+          { opacity: 1, transform: "none" },
+        ],
+        { duration: stepOnly ? 240 : 300, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+      );
+    }
+  }
+  lastCardKey = key;
+}
+
+/** What took the keyboard at the last render (a question's draft changes under it, so it can't be worked out again). */
+let lastTyping: View | null = null;
 
 function renderNow() {
   const view = desiredView();
   const level = desiredLevel(view);
-  const wasTyping = typingView(state.level, state.view);
+  const wasTyping = lastTyping;
+  const wasOpen = state.level === "open";
   state.level = level;
   if (view) state.view = view;
   const typing = typingView(level, state.view);
+  lastTyping = typing;
 
   lastCompactHtml = patch(compactEl, renderCompact(), lastCompactHtml);
   if (level === "open") {
@@ -716,6 +782,7 @@ function renderNow() {
       lastOpenHtml = patch(openEl, [renderHead(), renderBody()], lastOpenHtml);
     }
   }
+  easeInNewCard(wasOpen && level === "open");
   if (typing !== wasTyping) {
     // A page you opened takes the keyboard. One that comes back by itself (an approval
     // card was in front of it) only does if the island had it when the card came.
@@ -726,6 +793,7 @@ function renderNow() {
       if (!focus) return;
       if (typing === "chat") chat.focus();
       else if (typing === "task") tasks.focus();
+      else if (typing === "approval") openEl.querySelector<HTMLInputElement>("input[data-keep]")?.focus({ preventScroll: true });
     });
   }
   if (level === "open" && state.view === "approval") ackApprovals();
@@ -742,7 +810,7 @@ function renderCompact(): Node[] {
   const lone = loneTasks()[0];
   if (state.approvals.length) {
     const a = state.approvals[0];
-    out.push(h("span", { class: "ticker" }, h("b", null, a.agentLabel), ` ขออนุมัติ · ${a.project}`));
+    out.push(h("span", { class: "ticker" }, h("b", null, a.agentLabel), ` ${a.questions ? "ถามคุณ" : "ขออนุมัติ"} · ${a.project}`));
     out.push(h("span", { class: "count" }, String(state.approvals.length)));
     return out;
   }
@@ -763,8 +831,9 @@ function renderCompact(): Node[] {
 
 function renderHead(): HTMLElement {
   const working = state.sessions.filter(busy).length;
+  const asks = state.approvals.filter((a) => a.questions).length;
   const status = state.approvals.length
-    ? `${state.approvals.length} คำขอรออนุมัติ`
+    ? [asks && `${asks} คำถามรอคุณตอบ`, state.approvals.length - asks && `${state.approvals.length - asks} คำขอรออนุมัติ`].filter(Boolean).join(" · ")
     : working
       ? `${working} กำลังทำงาน`
       : state.sessions.length
@@ -812,8 +881,10 @@ function renderHead(): HTMLElement {
 
 function renderBody(): HTMLElement {
   switch (state.view) {
-    case "approval":
-      return h("div", { class: "body" }, renderApproval(shownApprovals()[0]), renderSide());
+    case "approval": {
+      const a = shownApprovals()[0];
+      return h("div", { class: "body" }, a.questions ? renderQuestion(a) : renderApproval(a), renderSide());
+    }
     case "notice":
       return h("div", { class: "body" }, renderNotice(), renderSide());
     case "drop":
@@ -928,11 +999,18 @@ function renderHome(): HTMLElement {
   );
 }
 
+/** A plan waiting for your OK (Claude Code's ExitPlanMode). */
+function isPlan(a: ApprovalView): boolean {
+  return a.tool === "ExitPlanMode";
+}
+
 function renderDetail(a: ApprovalView): HTMLElement | null {
   const text = a.detail ?? a.target;
   if (!text) return null;
-  const pre = h("div", { class: "cmd" });
-  for (const line of text.split("\n").slice(0, 5)) {
+  // A plan gets a taller box you can scroll through; a command or a diff its first lines.
+  const plan = isPlan(a);
+  const pre = h("div", { class: plan ? "cmd plan" : "cmd" });
+  for (const line of text.split("\n").slice(0, plan ? 40 : 5)) {
     const cls = a.toolKind === "edit" ? (line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "") : "";
     pre.append(cls ? h("span", { class: cls }, line) : line, "\n");
   }
@@ -945,20 +1023,126 @@ function renderApproval(a: ApprovalView): HTMLElement {
   const keys = state.settings?.shortcuts ?? true;
   const more = state.approvals.length > 1 ? ` · 1/${state.approvals.length}` : "";
   const elsewhere = a.background ? null : a.elsewhere ?? (a.agent === "antigravity" ? "ให้ Antigravity ถามเอง" : "ตอบใน terminal แทน");
+  const plan = isPlan(a);
   return h(
     "div",
-    { class: "card ask" },
+    { class: "card ask", "data-card": String(a.id) },
     slot(),
     metaLine(AGENT_COLORS[a.agent], a.project, `${a.agentLabel}${a.background ? ` (งานที่ ${name()} สั่ง)` : ""} ขออนุมัติ${more}`),
-    h("div", { class: "headline" }, a.toolKind === "command" && a.target ? "ขอรันคำสั่งนี้" : a.title),
+    h("div", { class: "headline" }, plan ? "วางแผนเสร็จแล้ว — เริ่มทำตามแผนนี้เลยไหม?" : a.toolKind === "command" && a.target ? "ขอรันคำสั่งนี้" : a.title),
     renderDetail(a),
     h(
       "div",
       { class: "actions" },
-      h("button", { class: "btn", onclick: () => decide(a, "deny") }, "ไม่อนุญาต", keys ? h("kbd", null, "N") : null),
+      h("button", { class: "btn", onclick: () => decide(a, "deny") }, plan ? "ยังไม่เริ่ม" : "ไม่อนุญาต", keys ? h("kbd", null, "N") : null),
       h("button", { class: "btn", onclick: () => decide(a, "always"), title: a.alwaysLabel }, "อนุญาตทั้งรอบนี้"),
-      h("button", { class: "btn primary", onclick: () => decide(a, "allow") }, "อนุญาต", keys ? h("kbd", null, "Y") : null),
+      h("button", { class: "btn primary", onclick: () => decide(a, "allow") }, plan ? "เริ่มตามแผน" : "อนุญาต", keys ? h("kbd", null, "Y") : null),
       elsewhere ? h("button", { class: "link", onclick: () => decide(a, "terminal") }, elsewhere) : null,
+    ),
+    h("div", { class: "timer" }, bar),
+  );
+}
+
+/**
+ * A question from the agent, laid out the way Claude Code asks it: the question, its
+ * choices numbered 1, 2, 3 (each with what it means underneath), and "อื่น ๆ" for your
+ * own words. A single choice is sent (or moves on to the next question) the moment you
+ * pick it; several choices wait for "ถัดไป" / "ส่งคำตอบ".
+ */
+function renderQuestion(a: ApprovalView): HTMLElement {
+  const qs = a.questions!;
+  const d = draftFor(a);
+  const step = Math.min(d.step, qs.length - 1);
+  const q = qs[step];
+  const last = step === qs.length - 1;
+  const bar = h("i", { "data-created": String(a.createdAt), "data-expires": String(a.expiresAt) });
+  const more = state.approvals.length > 1 ? ` · 1/${state.approvals.length}` : "";
+  const progress = qs.length > 1 ? ` · ข้อ ${step + 1}/${qs.length}` : "";
+  const typing = d.typing === step;
+  const own = d.other[step] ?? "";
+  const options = q.options.map((o, i) => {
+    const on = d.picked[step].includes(o.label);
+    return h(
+      "button",
+      {
+        class: `q-opt${on ? " on" : ""}`,
+        role: q.multiSelect ? "checkbox" : "radio",
+        "aria-checked": on ? "true" : "false",
+        title: o.description || o.label,
+        onclick: () => choose(a, o.label),
+      },
+      h("span", { class: "q-num" }, q.multiSelect && on ? icon("check", 13) : String(i + 1)),
+      h("span", { class: "q-label" }, h("b", null, o.label), o.description ? h("small", null, o.description) : null),
+    );
+  });
+  const ownRow = typing
+    ? h(
+        "label",
+        { class: "q-opt q-own q-typing" },
+        h("span", { class: "q-num" }, icon("edit", 13)),
+        h("input", {
+          type: "text",
+          class: "q-input",
+          "data-keep": `q-${a.id}-${step}`,
+          value: own,
+          maxlength: "500",
+          placeholder: q.multiSelect ? "พิมพ์เพิ่มเติม แล้วกด Enter" : "พิมพ์คำตอบของคุณ แล้วกด Enter",
+          "aria-label": "คำตอบของคุณ",
+          oninput: (e: Event) => {
+            d.other[step] = (e.target as HTMLInputElement).value;
+            const send = openEl.querySelector<HTMLButtonElement>(".q-actions .primary");
+            if (send) send.disabled = !answerOf(q, d, step);
+          },
+          onkeydown: (e: KeyboardEvent) => {
+            if (e.key === "Enter" && !e.isComposing) {
+              e.preventDefault();
+              next(a);
+            } else if (e.key === "Escape") {
+              e.stopPropagation();
+              d.typing = null;
+              render();
+            }
+          },
+        }),
+      )
+    : h(
+        "button",
+        { class: `q-opt q-own${own.trim() && (q.multiSelect || !d.picked[step].length) ? " on" : ""}`, onclick: () => typeOwn(a) },
+        h("span", { class: "q-num" }, String(q.options.length + 1)),
+        h(
+          "span",
+          { class: "q-label" },
+          h("b", null, own.trim() || "อื่น ๆ"),
+          h("small", null, own.trim() ? "คำตอบที่พิมพ์เอง · กดเพื่อแก้" : "พิมพ์คำตอบเอง"),
+        ),
+      );
+  // A single choice goes the moment you pick it; the button is for several, or your own words.
+  const button = q.multiSelect || typing;
+  return h(
+    "div",
+    { class: "card ask question", "data-card": `${a.id}:${step}` },
+    slot(),
+    metaLine(AGENT_COLORS[a.agent], a.project, `${a.agentLabel}${a.background ? ` (งานที่ ${name()} สั่ง)` : ""} ถามคุณ${progress}${more}`),
+    h(
+      "div",
+      { class: "q-move q-ask" },
+      q.header || q.multiSelect
+        ? h("div", { class: "q-tags" }, q.header ? h("span", { class: "q-chip" }, q.header) : null, q.multiSelect ? h("span", { class: "q-hint" }, "เลือกได้หลายข้อ") : null)
+        : null,
+      h("div", { class: "q-text" }, q.question),
+    ),
+    h("div", { class: "q-move q-opts", role: q.multiSelect ? "group" : "radiogroup", "aria-label": q.question }, ...options, ownRow),
+    h(
+      "div",
+      { class: "actions q-actions" },
+      step > 0 ? h("button", { class: "btn", onclick: () => back(a) }, icon("back", 15), "ย้อนกลับ") : null,
+      button ? h("button", { class: "btn primary", disabled: !answerOf(q, d, step), onclick: () => next(a) }, last ? "ส่งคำตอบ" : "ถัดไป") : null,
+      h(
+        "span",
+        { class: "q-links" },
+        a.elsewhere ? h("button", { class: "link", onclick: () => decide(a, "terminal") }, a.elsewhere) : null,
+        h("button", { class: "link", title: `ให้ ${a.agentLabel} ตัดสินใจเองแล้วทำงานต่อ`, onclick: () => decide(a, "deny") }, "ข้ามคำถามนี้"),
+      ),
     ),
     h("div", { class: "timer" }, bar),
   );
@@ -1174,10 +1358,14 @@ function ackApprovals() {
 
 async function decide(a: ApprovalView, decision: "allow" | "always" | "deny" | "terminal") {
   state.approvals = state.approvals.filter((x) => x.id !== a.id);
+  keepDrafts(state.approvals);
   if (decision === "allow" || decision === "always") {
     marsh.react(decision === "always" ? "adore" : "love", decision === "always" ? 1700 : 1100);
     marsh.bump(2.6);
     if (decision === "always") toast(`อนุญาตทั้งรอบนี้แล้ว — สั่งงานครั้งถัดไป ${a.agentLabel} จะถามใหม่`);
+  } else if (decision === "deny" && a.questions) {
+    // A skipped question: the agent goes on with its own pick, nothing to frown about.
+    toast(`ข้ามแล้ว — ${a.agentLabel} จะเลือกเองแล้วทำงานต่อ`);
   } else if (decision === "deny") {
     marsh.react("annoyed", 700);
   }
@@ -1185,6 +1373,64 @@ async function decide(a: ApprovalView, decision: "allow" | "always" | "deny" | "
   recallIfAnswered();
   try {
     await api.decide(a.id, decision);
+  } catch (err) {
+    toast(errorText(err));
+  }
+}
+
+// ── Questions ───────────────────────────────────────────────────────────────────
+
+/** Picks a choice of the front question. A single choice moves on (or sends) right away. */
+function choose(a: ApprovalView, label: string) {
+  const d = draftFor(a);
+  const q = a.questions![d.step];
+  pick(q, d, label);
+  if (!q.multiSelect) return next(a);
+  marsh.bump(1.2);
+  render();
+}
+
+/** Opens the "อื่น ๆ" box: your own words instead of (or, for several, as well as) a choice. */
+function typeOwn(a: ApprovalView) {
+  const d = draftFor(a);
+  if (!a.questions![d.step].multiSelect) d.picked[d.step] = [];
+  d.typing = d.step;
+  state.focusNext = true;
+  render();
+}
+
+function back(a: ApprovalView) {
+  const d = draftFor(a);
+  d.step = Math.max(0, d.step - 1);
+  d.typing = null;
+  render();
+}
+
+/** On to the next question once this one has an answer; after the last, send them all. */
+function next(a: ApprovalView) {
+  const d = draftFor(a);
+  const qs = a.questions!;
+  if (!answerOf(qs[d.step], d, d.step)) return;
+  d.typing = null;
+  if (d.step < qs.length - 1) {
+    d.step++;
+    marsh.bump(1.4);
+    render();
+    return;
+  }
+  const answers = answersOf(a, d);
+  if (answers) void sendAnswers(a, answers);
+}
+
+async function sendAnswers(a: ApprovalView, answers: Answers) {
+  state.approvals = state.approvals.filter((x) => x.id !== a.id);
+  keepDrafts(state.approvals);
+  marsh.react("happy", 1100);
+  marsh.bump(2.4);
+  render();
+  recallIfAnswered();
+  try {
+    if (!(await api.answer(a.id, answers))) toast(`คำถามนี้หมดเวลาแล้ว — ไปตอบที่หน้าจอของ ${a.agentLabel} แทนนะ`);
   } catch (err) {
     toast(errorText(err));
   }
@@ -1198,6 +1444,7 @@ function setApprovals(list: ApprovalView[]) {
     marsh.bump(2.2);
   }
   state.approvals = list;
+  keepDrafts(list);
   state.lastActivity = Date.now();
   render();
   // The card at the front is the one Mamori reaches out with.
@@ -1662,6 +1909,18 @@ function nest(): { nest: Point; scale: number } {
 }
 
 function approvalRequest(a: ApprovalView): RoamRequest {
+  if (a.questions) {
+    return {
+      kind: "approval",
+      title: `${a.project} · ${a.agentLabel} ถามคุณ`,
+      text: clip(a.questions[0].question, 160),
+      agent: a.agent,
+      approvalId: a.id,
+      createdAt: a.createdAt,
+      expiresAt: a.expiresAt,
+      questions: a.questions,
+    };
+  }
   const command = a.toolKind === "command" && !!a.target;
   return {
     kind: "approval",
@@ -1926,6 +2185,23 @@ async function setupDrops() {
 }
 
 document.addEventListener("keydown", (e) => {
+  // A question at the front: 1–9 picks a choice (the last number is "อื่น ๆ"), Enter
+  // sends what is picked, like answering in Claude Code itself.
+  const a = state.level === "open" && state.view === "approval" ? shownApprovals()[0] : undefined;
+  const field = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  if (a?.questions && !field && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    const q = a.questions[draftFor(a).step];
+    const n = /^[1-9]$/.test(e.key) ? Number(e.key) : 0;
+    if (n && n <= q.options.length) {
+      e.preventDefault();
+      return choose(a, q.options[n - 1].label);
+    }
+    if (n === q.options.length + 1) {
+      e.preventDefault();
+      return typeOwn(a);
+    }
+    if (e.key === "Enter") return next(a);
+  }
   if (e.key !== "Escape") return;
   if (state.chat.open) closeChat();
   else if (state.task.open) closeTasks();
@@ -1950,9 +2226,8 @@ function applySettings(s: Settings) {
 }
 
 async function start() {
+  // The island itself still glides with reduced motion (GENTLE); Mamori just keeps still.
   marsh.setReducedMotion(reducedMotion());
-  seat.reduced = reducedMotion();
-  shape.reduced = reducedMotion();
   try {
     const snap = await api.snapshot();
     applySettings(snap.settings);

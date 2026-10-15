@@ -1,4 +1,5 @@
-// Ctrl+Alt+Y / Ctrl+Alt+N answer the front approval card from anywhere.
+// Ctrl+Alt+Y / Ctrl+Alt+N answer the front approval card from anywhere (questions
+// need their own choices, so the keys pass them by).
 // They are registered only while a card is waiting, so they never sit on those
 // keys the rest of the time.
 
@@ -22,7 +23,7 @@ fn deny_key() -> Shortcut {
 
 fn answer_front(app: &AppHandle, decision: Decision) {
     let state = app.state::<AppState>();
-    if let Some(id) = state.approvals.first_id() {
+    if let Some(id) = state.approvals.first_approval_id() {
         crate::pipeline::decide(app, id, decision);
     }
 }
@@ -32,7 +33,7 @@ pub fn sync(app: &AppHandle) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         let Some(state) = handle.try_state::<AppState>() else { return };
-        let want = state.settings.lock().unwrap().shortcuts && !state.approvals.is_empty();
+        let want = state.settings.lock().unwrap().shortcuts && state.approvals.first_approval_id().is_some();
         if want == REGISTERED.load(Ordering::Relaxed) {
             return;
         }

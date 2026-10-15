@@ -97,22 +97,39 @@ body {
   flex-direction: column;
   gap: 8px;
   opacity: 0;
+  scale: 0.92;
   pointer-events: none;
-  transition: opacity 0.18s ease;
-  will-change: transform;
+  /* Going away: a quick, soft shrink back toward Mamori's head. */
+  transition:
+    opacity 0.16s ease,
+    scale 0.16s ease;
+  will-change: transform, opacity;
 }
 
+/* Coming out of Mamori's head (view.ts sets the origin at the tail): it swells a touch
+   past its size, then settles, in one smooth motion rather than a snap. */
 .bubble.show {
   opacity: 1;
+  scale: 1;
   pointer-events: auto;
-  animation: pop 0.42s cubic-bezier(0.2, 1.35, 0.4, 1) both;
+  animation: pop 0.44s both;
 }
 
 @keyframes pop {
-  from {
-    scale: 0.7;
+  0% {
+    opacity: 0;
+    scale: 0.45;
+    animation-timing-function: cubic-bezier(0.25, 0.9, 0.35, 1);
   }
-  to {
+  30% {
+    opacity: 1;
+  }
+  58% {
+    scale: 1.03;
+    animation-timing-function: cubic-bezier(0.45, 0, 0.35, 1);
+  }
+  100% {
+    opacity: 1;
     scale: 1;
   }
 }
@@ -182,6 +199,118 @@ body {
   gap: 6px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.b-actions.end {
+  justify-content: flex-end;
+  margin-top: -2px;
+}
+
+/* A question: the question itself reads first, then its choices, numbered like in
+   Claude Code. */
+.b-text.b-question {
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  max-height: 78px;
+}
+
+.b-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.b-opt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 34px;
+  box-sizing: border-box;
+  padding: 5px 12px 5px 6px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--card-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    transform 0.12s;
+}
+
+.b-opt:hover {
+  background: var(--card-3);
+}
+
+.b-opt:active {
+  transform: scale(0.97);
+}
+
+.b-opt:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: 2px;
+}
+
+.b-num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--edge);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.b-opt:hover .b-num {
+  background: var(--orange);
+  color: #1d1d1f;
+  box-shadow: none;
+}
+
+.b-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The choices follow the bubble out, one after another. */
+.bubble.show .b-opt {
+  animation: opt-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.bubble.show .b-opt:nth-child(2) {
+  animation-delay: 0.05s;
+}
+
+.bubble.show .b-opt:nth-child(3) {
+  animation-delay: 0.1s;
+}
+
+.bubble.show .b-opt:nth-child(4) {
+  animation-delay: 0.15s;
+}
+
+@keyframes opt-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+  to {
+    opacity: 1;
+    translate: none;
+  }
 }
 
 .b-btn {
@@ -257,7 +386,12 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .bubble,
   .bubble.show {
+    scale: 1;
+  }
+  .bubble.show,
+  .bubble.show .b-opt {
     animation: none;
   }
 }

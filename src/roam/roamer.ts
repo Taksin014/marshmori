@@ -209,6 +209,15 @@ export class Roamer {
     return this.phase === "arrived";
   }
 
+  /** Scene time in seconds (stepped by hand while recording). */
+  get now(): number {
+    return this.time;
+  }
+
+  get reducedMotion(): boolean {
+    return this.reduced;
+  }
+
   /** The pointer is over the bubble or Mamori's head right now. */
   get engaged(): boolean {
     return this.engagedNow;

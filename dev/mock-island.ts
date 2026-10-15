@@ -1,12 +1,18 @@
 // Fakes the Rust side so the island can be opened in a normal browser:
 // http://127.0.0.1:1420/dev/island-mock.html?scenario=tuck|peek|pill|panel|approval|done|error|drop|file|chat|empty|away
-//   |task-form|task-run|task-done|round|folder|task-files
+//   |task-form|task-run|task-done|round|folder|task-files|question|questions|plan
 //   &look=auto|dark|light|forest|midnight  &bounce=soft|boing|extra
 
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 
 const params = new URLSearchParams(location.search);
 const scenario = params.get("scenario") ?? "panel";
+// &timers: frames on a timer instead of the display, for scripted checks in a browser
+// that isn't painting (a hidden or covered window gets no animation frames at all).
+if (params.has("timers")) {
+  window.requestAnimationFrame = (cb) => window.setTimeout(() => cb(performance.now()), 16);
+  window.cancelAnimationFrame = (id) => window.clearTimeout(id);
+}
 const look = params.get("look") ?? "dark";
 // A desktop to match: light wallpaper under a light island.
 document.documentElement.classList.toggle("wall-light", look === "light");
@@ -72,8 +78,79 @@ export const sessions = [
   },
 ];
 
+/** A question card from Claude Code (AskUserQuestion), as the Rust side sends it. */
+function questionCard(questions: unknown[], id = 5) {
+  return {
+    id,
+    agent: "claude",
+    agentLabel: "Claude Code",
+    sessionKey: "claude:a",
+    project: "shop",
+    cwd: "C:\\โปรเจ็ค\\shop",
+    tool: "AskUserQuestion",
+    toolKind: "question",
+    title: "ถามคุณ: จะตรวจข้อมูลในฟอร์ม login ด้วยอะไรดี?",
+    target: null,
+    detail: null,
+    alwaysLabel: "",
+    elsewhere: "ตอบใน VS Code แทน",
+    background: false,
+    questions,
+    createdAt: now - 2_000,
+    expiresAt: now + 108_000,
+  };
+}
+
+const formQuestion = {
+  question: "จะตรวจข้อมูลในฟอร์ม login ด้วยอะไรดี?",
+  header: "ตรวจฟอร์ม",
+  multiSelect: false,
+  options: [
+    { label: "zod (แนะนำ)", description: "มีในโปรเจกต์อยู่แล้ว ใช้กับ TypeScript ได้ดี" },
+    { label: "yup", description: "รูปแบบคล้าย zod แต่ต้องติดตั้งเพิ่ม" },
+    { label: "เขียนเอง", description: "ไม่เพิ่ม dependency แต่โค้ดยาวกว่า" },
+  ],
+};
+
+const extrasQuestion = {
+  question: "อยากให้ทำอะไรเพิ่มด้วยไหม?",
+  header: "งานเสริม",
+  multiSelect: true,
+  options: [
+    { label: "เขียน test", description: "unit test ของฟอร์มและการตรวจข้อมูล" },
+    { label: "ปุ่มแสดงรหัสผ่าน", description: "ไอคอนรูปตาในช่องรหัสผ่าน" },
+    { label: "จำฉันไว้", description: "ช่องติ๊กให้อยู่ในระบบต่อ" },
+  ],
+};
+
+const planCard = {
+  id: 6,
+  agent: "claude",
+  agentLabel: "Claude Code",
+  sessionKey: "claude:a",
+  project: "shop",
+  cwd: "C:\\โปรเจ็ค\\shop",
+  tool: "ExitPlanMode",
+  toolKind: "plan",
+  title: "ขออนุมัติแผนงาน",
+  target: null,
+  detail: "## แผน: หน้า login\n1. เพิ่ม src/Login.tsx พร้อมฟอร์มอีเมล/รหัสผ่าน\n2. ตรวจข้อมูลด้วย zod\n3. ต่อ API /auth/login และเก็บ token\n4. เขียน test ของฟอร์ม\n5. เพิ่ม route /login ใน App.tsx",
+  alwaysLabel: "อนุญาตทุกอย่างที่ Claude Code ขอในรอบนี้ — สั่งงานครั้งถัดไปจะกลับมาถามใหม่",
+  elsewhere: "ตอบใน terminal แทน",
+  background: false,
+  questions: null,
+  createdAt: now - 2_000,
+  expiresAt: now + 108_000,
+};
+
 const approvals =
-  scenario === "approval"
+  scenario === "question"
+    ? [questionCard([formQuestion])]
+    : scenario === "questions"
+      ? [questionCard([formQuestion, extrasQuestion])]
+      : scenario === "plan"
+        ? [planCard]
+        : scenario === "approval"
     ? [
         {
           id: 1,
@@ -257,6 +334,10 @@ mockIPC(
       case "open_folder":
         return null;
       case "approval_ack":
+        return true;
+      case "approval_answer":
+        // For checks: what the card sent back.
+        (window as unknown as { __answers: unknown }).__answers = (args as { answers: unknown }).answers;
         return true;
       case "task_list":
         return { tasks: scenario.startsWith("task") ? tasks : [], folders: ["C:\\โปรเจ็ค\\shop", "C:\\โปรเจ็ค\\shop-api", "C:\\โปรเจ็ค\\landing-page"], agent: "claude", mode: "ask" };

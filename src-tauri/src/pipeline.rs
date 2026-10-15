@@ -5,8 +5,8 @@ use std::time::Duration;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::agents::{self, Agent, Event, Kind, ToolKind};
-use crate::approvals::{self, ApprovalView, Decision, Shape};
+use crate::agents::{self, Agent, Event, Kind, Question, ToolKind};
+use crate::approvals::{self, ApprovalView, Decision, Reply, Shape};
 use crate::gate;
 use crate::sessions::State;
 use crate::{island, paths, roam, AppState};
@@ -69,7 +69,16 @@ pub fn process(app: &AppHandle, ev: Event) -> Option<String> {
     let state = app.state::<AppState>();
     let agent = ev.agent;
 
+    // Claude Code asks the user something (AskUserQuestion). Its answer can only go in
+    // at PreToolUse; a PermissionRequest for it (the island didn't take it) is left to
+    // Claude Code's own question, unless the island already answered that very call.
+    let questions = (agent == Agent::Claude && ev.tool.as_ref().map(|t| t.kind == ToolKind::Question).unwrap_or(false))
+        .then(|| agents::questions(&ev.input))
+        .flatten();
+    let asks_question = questions.is_some() && ev.name == "PreToolUse";
+
     let needs_decision = match ev.kind {
+        Kind::Permission if questions.is_some() => false,
         Kind::Permission => true,
         Kind::ToolStart if agent == Agent::Antigravity && ev.name == "PreToolUse" => {
             // A task Mamori runs always asks before a command: nobody is at a terminal.
@@ -110,6 +119,12 @@ pub fn process(app: &AppHandle, ev: Event) -> Option<String> {
         crate::notify::session_finished(app, &ev);
     }
 
+    if let (Some(list), true) = (questions.clone(), asks_question) {
+        return question(app, ev, list);
+    }
+    if ev.kind == Kind::Permission && questions.is_some() {
+        return state.approvals.recall_answer(ev.tool_use_id.as_deref()).map(|input| approvals::answer_permission_json(&input));
+    }
     if needs_decision {
         return permission(app, ev);
     }
@@ -194,15 +209,19 @@ fn permission(app: &AppHandle, ev: Event) -> Option<String> {
         created_at: now,
         expires_at: now + timeout * 1000,
         background,
+        questions: None,
         tool_use_id: ev.tool_use_id.clone(),
     };
     set_session(app, &key, State::Approval, format!("รออนุมัติ: {}", tool.summary));
 
     let handle = app.clone();
-    let decision = state.approvals.wait(view, ACK_TIMEOUT, Duration::from_secs(timeout), move || {
-        emit_approvals(&handle);
-        crate::shortcuts::sync(&handle);
-    });
+    let decision = state
+        .approvals
+        .wait(view, ACK_TIMEOUT, Duration::from_secs(timeout), move || {
+            emit_approvals(&handle);
+            crate::shortcuts::sync(&handle);
+        })
+        .and_then(Reply::decision);
     if let Some(d) = decision {
         state.approvals.remember(ev.tool_use_id.as_deref(), d);
     }
@@ -238,6 +257,91 @@ fn permission(app: &AppHandle, ev: Event) -> Option<String> {
         }
     }
     approvals::response_json(shape, decision)
+}
+
+/// Claude Code asks the user something: the island shows the question with its choices,
+/// and the answer goes back in `updatedInput`, so Claude Code carries on right away.
+/// No answer (or "answer there instead") prints nothing and Claude Code asks in its own
+/// UI; a background task has nowhere else to ask, so it goes on without one.
+fn question(app: &AppHandle, ev: Event, questions: Vec<Question>) -> Option<String> {
+    let state = app.state::<AppState>();
+    let settings = state.settings.lock().unwrap().clone();
+    let key = ev.session_key();
+    let summary = ev.tool.as_ref().map(|t| t.summary.clone()).unwrap_or_else(|| "ถามคุณ".into());
+    let (task_id, surface) = {
+        let sessions = state.sessions.lock().unwrap();
+        let s = sessions.get(&key);
+        (ev.task.clone().or_else(|| s.and_then(|s| s.task.clone())), s.and_then(|s| s.surface.clone()))
+    };
+    let background = task_id.is_some();
+    let where_else = surface.unwrap_or_else(|| "terminal".into());
+    let skip = |why: &str| {
+        set_session(app, &key, State::Thinking, format!("ข้ามคำถาม: {}", agents::short(&questions[0].question, 40)));
+        log(app, &ev, "approval", &format!("{why}: {}", agents::short(&questions[0].question, 60)));
+        Some(approvals::skip_question_json())
+    };
+
+    if !island::is_visible(app) || (!settings.approvals && !background) {
+        if background {
+            return skip("ข้ามคำถาม (ซ่อนแถบไว้อยู่)");
+        }
+        set_session(app, &key, State::Approval, format!("รอคุณตอบใน {where_else}"));
+        crate::notify::question_elsewhere(app, &ev, &questions[0]);
+        return None;
+    }
+
+    let now = paths::now_ms();
+    let timeout = settings.approval_timeout;
+    let view = ApprovalView {
+        id: state.approvals.next_id(),
+        agent: ev.agent,
+        agent_label: ev.agent.label().to_string(),
+        session_key: key.clone(),
+        project: crate::sessions::project_name(&ev.cwd),
+        cwd: ev.cwd.clone(),
+        tool: ev.tool.as_ref().map(|t| t.name.clone()).unwrap_or_default(),
+        tool_kind: ToolKind::Question,
+        title: summary.clone(),
+        target: None,
+        detail: None,
+        always_label: String::new(),
+        elsewhere: (!background).then(|| format!("ตอบใน {where_else} แทน")),
+        created_at: now,
+        expires_at: now + timeout * 1000,
+        background,
+        questions: Some(questions.clone()),
+        tool_use_id: ev.tool_use_id.clone(),
+    };
+    set_session(app, &key, State::Approval, summary);
+
+    let handle = app.clone();
+    let reply = state.approvals.wait(view, ACK_TIMEOUT, Duration::from_secs(timeout), move || {
+        emit_approvals(&handle);
+        crate::shortcuts::sync(&handle);
+    });
+    match reply {
+        Some(Reply::Answers(answers)) => {
+            let text = answers.values().filter_map(Value::as_str).collect::<Vec<_>>().join(" · ");
+            set_session(app, &key, State::Working, format!("ได้คำตอบแล้ว: {}", agents::short(&text, 40)));
+            log(app, &ev, "approval", &format!("ตอบคำถาม: {}", agents::short(&text, 80)));
+            state.approvals.remember_answer(ev.tool_use_id.as_deref(), &ev.input, &answers);
+            Some(approvals::answer_json(&ev.input, &answers))
+        }
+        Some(Reply::Decision(Decision::Deny)) => skip("ข้ามคำถาม"),
+        _ if background => skip("ไม่มีใครตอบ เลยข้ามคำถาม"),
+        _ => {
+            let still_there = state.sessions.lock().unwrap().get(&key).map(|s| s.state == State::Approval).unwrap_or(false);
+            if still_there {
+                set_session(app, &key, State::Approval, format!("รอคุณตอบใน {where_else}"));
+            }
+            None
+        }
+    }
+}
+
+/// Answers a question card from the island (or Mamori out at the pointer).
+pub fn answer(app: &AppHandle, id: u64, answers: approvals::Answers) -> bool {
+    app.state::<AppState>().approvals.answer(id, answers)
 }
 
 /// Turns "allow for this round" off again for a session (from the island).

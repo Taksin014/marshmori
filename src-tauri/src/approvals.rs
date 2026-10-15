@@ -9,6 +9,10 @@
 // Claude Code's and Codex's PermissionRequest, Claude Code's PreToolUse (in an IDE's
 // panel and in Mamori's own background tasks, where PermissionRequest never fires —
 // see gate.rs), and Antigravity's PreToolUse.
+//
+// A card can also be a question (Claude Code's AskUserQuestion, asked at PreToolUse
+// everywhere): it is answered with the chosen options (`Reply::Answers`), which go
+// back to Claude Code in `updatedInput` (`answer_json`), never with a bare yes.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-use crate::agents::{Agent, ToolKind};
+use crate::agents::{Agent, Question, ToolKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
@@ -64,9 +68,29 @@ impl Shape {
     }
 }
 
+/// A question's answers: its text → the chosen label (several joined by ", "), or
+/// what the user typed.
+pub type Answers = serde_json::Map<String, serde_json::Value>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Reply {
+    Decision(Decision),
+    Answers(Answers),
+}
+
+impl Reply {
+    /// The yes/no of an approval card (a question card never gets one).
+    pub fn decision(self) -> Option<Decision> {
+        match self {
+            Reply::Decision(d) => Some(d),
+            Reply::Answers(_) => None,
+        }
+    }
+}
+
 enum Msg {
     Ack,
-    Decide(Decision),
+    Reply(Reply),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -92,6 +116,9 @@ pub struct ApprovalView {
     pub expires_at: u64,
     /// A task Mamori runs in the background: there is no terminal to answer in.
     pub background: bool,
+    /// Set when the agent asks the user something (the card shows its choices instead
+    /// of allow/deny).
+    pub questions: Option<Vec<Question>>,
     /// The tool call the card is about (when the agent says), so the card goes away
     /// when that very call runs or fails, and not when another one does.
     #[serde(skip)]
@@ -113,6 +140,8 @@ pub struct Approvals {
     /// Answers by tool call: if Claude Code still asks after PreToolUse said yes (some
     /// versions do), its PermissionRequest gets the same answer without a second card.
     answered: Mutex<VecDeque<(String, Decision, Instant)>>,
+    /// Questions answered at PreToolUse, by tool call: the input with the answers in it.
+    answered_questions: Mutex<VecDeque<(String, serde_json::Value, Instant)>>,
 }
 
 impl Approvals {
@@ -136,10 +165,16 @@ impl Approvals {
         self.pending.lock().unwrap().first().map(|p| p.view.id)
     }
 
+    /// The first card a yes/no answers (the shortcuts skip questions).
+    pub fn first_approval_id(&self) -> Option<u64> {
+        self.pending.lock().unwrap().iter().find(|p| p.view.questions.is_none()).map(|p| p.view.id)
+    }
+
     /// Shows `view` and blocks until it is answered. `changed` runs whenever the
     /// list of pending cards changes (to tell the island).
-    pub fn wait(&self, view: ApprovalView, ack_timeout: Duration, timeout: Duration, changed: impl Fn()) -> Option<Decision> {
+    pub fn wait(&self, view: ApprovalView, ack_timeout: Duration, timeout: Duration, changed: impl Fn()) -> Option<Reply> {
         let id = view.id;
+        let question = view.questions.is_some();
         let (tx, rx) = mpsc::channel();
         self.pending.lock().unwrap().push(Pending { view, tx });
         changed();
@@ -156,7 +191,10 @@ impl Approvals {
             }
             match rx.recv_timeout(limit - now) {
                 Ok(Msg::Ack) => acked = true,
-                Ok(Msg::Decide(d)) => break Some(d),
+                // A yes can't answer a question ("allow for this round" passing by, a
+                // shortcut): it waits for its choices.
+                Ok(Msg::Reply(Reply::Decision(Decision::Allow | Decision::Always))) if question => {}
+                Ok(Msg::Reply(r)) => break Some(r),
                 Err(RecvTimeoutError::Timeout) | Err(RecvTimeoutError::Disconnected) => break None,
             }
         };
@@ -179,14 +217,25 @@ impl Approvals {
     }
 
     pub fn decide(&self, id: u64, decision: Decision) -> bool {
-        self.send(id, Msg::Decide(decision))
+        self.send(id, Msg::Reply(Reply::Decision(decision)))
+    }
+
+    /// Answers a question card. Every one of its questions needs an answer, and only
+    /// to questions it asked.
+    pub fn answer(&self, id: u64, answers: Answers) -> bool {
+        let pending = self.pending.lock().unwrap();
+        let Some(p) = pending.iter().find(|p| p.view.id == id) else { return false };
+        let Some(questions) = &p.view.questions else { return false };
+        let complete = questions.iter().all(|q| answers.get(&q.question).and_then(|a| a.as_str()).map(|a| !a.trim().is_empty()).unwrap_or(false))
+            && answers.keys().all(|k| questions.iter().any(|q| &q.question == k));
+        complete && p.tx.send(Msg::Reply(Reply::Answers(answers))).is_ok()
     }
 
     /// The agent moved on (the turn ended, a new prompt came): drop its cards.
     pub fn cancel_session(&self, session_key: &str) {
         let pending = self.pending.lock().unwrap();
         for p in pending.iter().filter(|p| p.view.session_key == session_key) {
-            let _ = p.tx.send(Msg::Decide(Decision::Terminal));
+            let _ = p.tx.send(Msg::Reply(Reply::Decision(Decision::Terminal)));
         }
     }
 
@@ -197,7 +246,7 @@ impl Approvals {
         let pending = self.pending.lock().unwrap();
         for p in pending.iter().filter(|p| p.view.session_key == session_key) {
             if p.view.tool_use_id.as_deref().map(|own| own == id).unwrap_or(true) {
-                let _ = p.tx.send(Msg::Decide(Decision::Terminal));
+                let _ = p.tx.send(Msg::Reply(Reply::Decision(Decision::Terminal)));
             }
         }
     }
@@ -206,7 +255,7 @@ impl Approvals {
     pub fn decide_session(&self, session_key: &str, decision: Decision) {
         let pending = self.pending.lock().unwrap();
         for p in pending.iter().filter(|p| p.view.session_key == session_key) {
-            let _ = p.tx.send(Msg::Decide(decision));
+            let _ = p.tx.send(Msg::Reply(Reply::Decision(decision)));
         }
     }
 
@@ -221,6 +270,23 @@ impl Approvals {
         while list.len() > 200 {
             list.pop_front();
         }
+    }
+
+    pub fn remember_answer(&self, tool_use_id: Option<&str>, input: &serde_json::Value, answers: &Answers) {
+        let Some(id) = tool_use_id.filter(|id| !id.is_empty()) else { return };
+        let mut list = self.answered_questions.lock().unwrap();
+        list.retain(|(_, _, at)| at.elapsed() < REMEMBER_FOR);
+        list.push_back((id.to_string(), with_answers(input, answers), Instant::now()));
+        while list.len() > 50 {
+            list.pop_front();
+        }
+    }
+
+    /// The answered input of a question already answered at PreToolUse.
+    pub fn recall_answer(&self, tool_use_id: Option<&str>) -> Option<serde_json::Value> {
+        let id = tool_use_id?;
+        let list = self.answered_questions.lock().unwrap();
+        list.iter().rev().find(|(own, _, at)| own == id && at.elapsed() < REMEMBER_FOR).map(|(_, v, _)| v.clone())
     }
 
     pub fn recall(&self, tool_use_id: Option<&str>) -> Option<Decision> {
@@ -277,6 +343,41 @@ pub fn response_json(shape: Shape, decision: Option<Decision>) -> Option<String>
     }
 }
 
+const SKIP_REASON: &str = "The user skipped this question in Marshmori. Carry on with your best judgment, and say which choice you made.";
+const ANSWER_REASON: &str = "Answered in Marshmori.";
+
+/// The question's own input with the answers added: `updatedInput` replaces the whole
+/// input, so everything else goes back as it came.
+fn with_answers(input: &serde_json::Value, answers: &Answers) -> serde_json::Value {
+    let mut updated = match input {
+        serde_json::Value::Object(map) => map.clone(),
+        _ => serde_json::Map::new(),
+    };
+    updated.insert("answers".into(), serde_json::Value::Object(answers.clone()));
+    serde_json::Value::Object(updated)
+}
+
+/// Claude Code's AskUserQuestion, answered at PreToolUse.
+pub fn answer_json(input: &serde_json::Value, answers: &Answers) -> String {
+    serde_json::json!({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "allow",
+        "permissionDecisionReason": ANSWER_REASON,
+        "updatedInput": with_answers(input, answers),
+    }})
+    .to_string()
+}
+
+/// The same answers again, should Claude Code still bring up its prompt for that call.
+pub fn answer_permission_json(updated_input: &serde_json::Value) -> String {
+    serde_json::json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow", "updatedInput": updated_input}}}).to_string()
+}
+
+/// A question nobody can answer in a terminal (a background task): go on without it.
+pub fn skip_question_json() -> String {
+    serde_json::json!({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": SKIP_REASON}}).to_string()
+}
+
 /// The tooltip of "allow for this round".
 pub fn always_label(agent: Agent) -> String {
     format!("อนุญาตทุกอย่างที่ {} ขอในรอบนี้ — สั่งงานครั้งถัดไปจะกลับมาถามใหม่", agent.label())
@@ -305,6 +406,7 @@ mod tests {
             created_at: 0,
             expires_at: 0,
             background: false,
+            questions: None,
             tool_use_id: None,
         }
     }
@@ -351,7 +453,7 @@ mod tests {
         }
         assert!(a.ack(7));
         assert!(a.decide(7, Decision::Deny));
-        assert_eq!(waiter.join().unwrap(), Some(Decision::Deny));
+        assert_eq!(waiter.join().unwrap(), Some(Reply::Decision(Decision::Deny)));
         assert!(!a.decide(7, Decision::Allow), "a finished card can't be answered twice");
     }
 
@@ -370,7 +472,63 @@ mod tests {
         std::thread::sleep(Duration::from_millis(50));
         assert_eq!(a.first_id(), Some(9), "a Read running alongside doesn't take the card away");
         a.cancel_tool("codex:s", Some("toolu_bash"));
-        assert_eq!(waiter.join().unwrap(), Some(Decision::Terminal));
+        assert_eq!(waiter.join().unwrap(), Some(Reply::Decision(Decision::Terminal)));
+    }
+
+    fn ask(id: u64) -> ApprovalView {
+        let mut v = view(id);
+        v.tool_kind = ToolKind::Question;
+        v.questions = crate::agents::questions(&serde_json::json!({"questions": [
+            {"question": "Which framework?", "header": "Framework", "options": [{"label": "React", "description": "Component library"}, {"label": "Vue"}], "multiSelect": false},
+            {"question": "Which extras?", "header": "Extras", "options": [{"label": "Tests"}, {"label": "Docs"}], "multiSelect": true}
+        ]}));
+        v
+    }
+
+    fn answers(pairs: &[(&str, &str)]) -> Answers {
+        pairs.iter().map(|(q, a)| (q.to_string(), serde_json::Value::String(a.to_string()))).collect()
+    }
+
+    #[test]
+    fn a_question_is_answered_with_its_choices_and_never_a_bare_yes() {
+        let a = Arc::new(Approvals::new());
+        let a2 = a.clone();
+        let waiter = std::thread::spawn(move || a2.wait(ask(3), Duration::from_secs(2), Duration::from_secs(5), || {}));
+        while a.first_id().is_none() {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        a.ack(3);
+        assert_eq!(a.first_approval_id(), None, "the shortcuts leave questions alone");
+        assert!(!a.answer(3, answers(&[("Which framework?", "React")])), "every question needs an answer");
+        assert!(!a.answer(3, answers(&[("Which framework?", "React"), ("Which extras?", "Tests"), ("Made up?", "x")])));
+        // "Allow for this round" passing by doesn't answer it.
+        a.decide_session("codex:s", Decision::Allow);
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(a.first_id(), Some(3));
+        let given = answers(&[("Which framework?", "React"), ("Which extras?", "Tests, Docs")]);
+        assert!(a.answer(3, given.clone()));
+        assert_eq!(waiter.join().unwrap(), Some(Reply::Answers(given)));
+        assert!(!view(4).questions.is_some());
+    }
+
+    #[test]
+    fn answers_go_back_in_updated_input_with_the_original_input() {
+        let input = serde_json::json!({"questions": [{"question": "Which framework?", "header": "Framework", "options": [{"label": "React", "description": "Component library"}], "multiSelect": false}]});
+        let out: serde_json::Value = serde_json::from_str(&answer_json(&input, &answers(&[("Which framework?", "React")]))).unwrap();
+        let o = &out["hookSpecificOutput"];
+        assert_eq!(o["hookEventName"], "PreToolUse");
+        assert_eq!(o["permissionDecision"], "allow");
+        assert_eq!(o["updatedInput"]["questions"], input["questions"], "the questions go back as they came");
+        assert_eq!(o["updatedInput"]["answers"]["Which framework?"], "React");
+        let skip: serde_json::Value = serde_json::from_str(&skip_question_json()).unwrap();
+        assert_eq!(skip["hookSpecificOutput"]["permissionDecision"], "deny");
+
+        let a = Approvals::new();
+        a.remember_answer(Some("toolu_q"), &input, &answers(&[("Which framework?", "React")]));
+        let again: serde_json::Value = serde_json::from_str(&answer_permission_json(&a.recall_answer(Some("toolu_q")).unwrap())).unwrap();
+        assert_eq!(again["hookSpecificOutput"]["decision"]["behavior"], "allow");
+        assert_eq!(again["hookSpecificOutput"]["decision"]["updatedInput"]["answers"]["Which framework?"], "React");
+        assert!(a.recall_answer(Some("toolu_other")).is_none());
     }
 
     #[test]

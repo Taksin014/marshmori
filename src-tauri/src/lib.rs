@@ -136,6 +136,12 @@ fn approval_decide(app: AppHandle, id: u64, decision: String) -> Result<bool, St
     Ok(pipeline::decide(&app, id, decision))
 }
 
+/// Answers a question card: question text → chosen label(s) or what the user typed.
+#[tauri::command]
+fn approval_answer(app: AppHandle, id: u64, answers: approvals::Answers) -> bool {
+    pipeline::answer(&app, id, answers)
+}
+
 /// Turns "allow for this round" off for a session before its round ends.
 #[tauri::command]
 fn session_allow_all_off(app: AppHandle, key: String) -> bool {
@@ -562,6 +568,7 @@ pub fn run() {
             island_take_open,
             approval_ack,
             approval_decide,
+            approval_answer,
             session_allow_all_off,
             history_list,
             session_dismiss,

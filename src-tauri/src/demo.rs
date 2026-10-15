@@ -28,6 +28,15 @@ pub fn run(app: &AppHandle) {
         step(&claude, a, "SessionStart", base(json!({"hook_event_name": "SessionStart", "source": "startup"})), 600);
         step(&claude, a, "UserPromptSubmit", base(json!({"hook_event_name": "UserPromptSubmit", "prompt": "เพิ่มหน้า login ให้หน่อย"})), 2200);
         step(&claude, a, "PreToolUse", base(json!({"hook_event_name": "PreToolUse", "tool_name": "Read", "tool_input": {"file_path": "C:\\demo\\shop\\src\\App.tsx"}})), 1600);
+        // A real question card: pick an answer in the island and the demo goes on.
+        step(&claude, a, "PreToolUse", base(json!({"hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion", "tool_use_id": "demo-q1", "tool_input": {"questions": [
+            {"question": "จะตรวจข้อมูลในฟอร์ม login ด้วยอะไรดี?", "header": "ตรวจฟอร์ม", "multiSelect": false, "options": [
+                {"label": "zod (แนะนำ)", "description": "มีในโปรเจกต์อยู่แล้ว ใช้กับ TypeScript ได้ดี"},
+                {"label": "yup", "description": "รูปแบบคล้าย zod แต่ต้องติดตั้งเพิ่ม"},
+                {"label": "เขียนเอง", "description": "ไม่เพิ่ม dependency แต่โค้ดยาวกว่า"}
+            ]}
+        ]}})), 600);
+        step(&claude, a, "PostToolUse", base(json!({"hook_event_name": "PostToolUse", "tool_name": "AskUserQuestion", "tool_use_id": "demo-q1"})), 900);
         step(&claude, a, "PreToolUse", base(json!({"hook_event_name": "PreToolUse", "tool_name": "Write", "tool_input": {"file_path": "C:\\demo\\shop\\src\\Login.tsx", "content": "export function Login() {\n  return <form>…</form>;\n}"}})), 1800);
         // A real approval card: answer it in the island (nothing actually runs).
         step(&claude, a, "PermissionRequest", base(json!({"hook_event_name": "PermissionRequest", "tool_name": "Bash", "tool_input": {"command": "npm install zod"}})), 600);

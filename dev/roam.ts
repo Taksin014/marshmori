@@ -2,7 +2,7 @@
 //   http://127.0.0.1:1420/dev/roam.html            move the mouse, press the buttons
 //   http://127.0.0.1:1420/dev/roam.html?capture=1  a scripted scene, stepped by hand
 //     (window.__step(dt) advances it; used to record the GIF frame by frame)
-//     &scene=approval|done|showcase
+//     &scene=approval|question|done|showcase
 //   &reach=head|hand   what Mamori reaches out with (default: head for questions and
 //                      problems, a hand that taps for finished work — like the app)
 
@@ -81,7 +81,7 @@ const roamer = new Roamer(box, "cream", { unit: showcase ? ROAM_UNIT * BIG : ROA
 (window as unknown as { __roamer: Roamer }).__roamer = roamer;
 const view = new RoamView(document.getElementById("roam")!, box, roamer, {
   onRects: () => {},
-  onAction: (a) => act(a),
+  onAction: (a, answer) => act(a, answer),
 });
 view.onFrame = () => {
   if (roamer.visible) islandEl.classList.add("away");
@@ -109,6 +109,27 @@ const APPROVAL: RoamRequest = {
   approvalId: 1,
   createdAt: Date.now(),
   expiresAt: Date.now() + 110_000,
+};
+const QUESTION: RoamRequest = {
+  kind: "approval",
+  title: "shop · Claude Code ถามคุณ",
+  text: "จะตรวจข้อมูลในฟอร์ม login ด้วยอะไรดี?",
+  agent: "claude",
+  approvalId: 2,
+  createdAt: Date.now(),
+  expiresAt: Date.now() + 110_000,
+  questions: [
+    {
+      question: "จะตรวจข้อมูลในฟอร์ม login ด้วยอะไรดี?",
+      header: "ตรวจฟอร์ม",
+      multiSelect: false,
+      options: [
+        { label: "zod (แนะนำ)", description: "มีในโปรเจกต์อยู่แล้ว" },
+        { label: "yup", description: "ต้องติดตั้งเพิ่ม" },
+        { label: "เขียนเอง", description: "ไม่เพิ่ม dependency" },
+      ],
+    },
+  ],
 };
 const DONE: RoamRequest = {
   kind: "done",
@@ -140,7 +161,7 @@ const reachParam = params.get("reach");
 function send(request: RoamRequest) {
   const req: RoamRequest = { ...request, reach: reachParam === "head" || reachParam === "hand" ? reachParam : request.kind === "done" ? "hand" : "head" };
   if (req.kind === "approval") {
-    setIsland(true, "<b>shop</b> · ขออนุมัติ");
+    setIsland(true, req.questions ? "<b>shop</b> · ถามคุณ" : "<b>shop</b> · ขออนุมัติ");
     islandFace = "ask";
   } else {
     islandFace = req.kind === "done" ? "done" : "error";
@@ -155,13 +176,16 @@ function send(request: RoamRequest) {
   });
 }
 
-function act(action: RoamAction) {
+function act(action: RoamAction, answer?: string) {
   if (action === "open" || action === "dismiss") {
     roamer.request = null;
     roamer.home();
     return;
   }
-  if (action === "allow") {
+  if (action === "answer") {
+    (window as unknown as { __answer: unknown }).__answer = answer;
+    roamer.celebrate("happy");
+  } else if (action === "allow") {
     roamer.celebrate("love");
   } else {
     roamer.request = null;
@@ -185,6 +209,7 @@ if (!capture) {
     roamer.setCursor(pointer);
   });
   document.getElementById("b-approval")!.onclick = () => send(APPROVAL);
+  document.getElementById("b-question")!.onclick = () => send(QUESTION);
   document.getElementById("b-done")!.onclick = () => send(DONE);
   document.getElementById("b-error")!.onclick = () => send(ERROR);
   document.getElementById("b-home")!.onclick = () => roamer.home();
@@ -204,6 +229,11 @@ const W = window.innerWidth;
 const H = window.innerHeight;
 const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 
+function firstChoice() {
+  const b = document.querySelector(".bubble .b-opt")?.getBoundingClientRect();
+  return b ? { x: b.left + b.width * 0.4, y: b.top + b.height * 0.55 } : { x: W * 0.5, y: H * 0.5 };
+}
+
 function okButton() {
   const b = document.querySelector(".bubble .b-btn.primary")?.getBoundingClientRect();
   return b ? { x: b.left + b.width * 0.45, y: b.top + b.height * 0.55 } : { x: W * 0.5, y: H * 0.5 };
@@ -219,6 +249,18 @@ const scenes: Record<string, { moves: Move[]; events: { at: number; run: () => v
       { at: 0.4, run: () => send(APPROVAL) },
       { at: 7.7, run: () => click() },
       { at: 7.75, run: () => act("allow") },
+    ],
+    end: 10.6,
+  },
+  question: {
+    moves: [
+      { at: 3.8, dur: 0.75, to: () => ({ x: W * 0.36, y: H * 0.7 }) },
+      { at: 6.6, dur: 0.8, to: firstChoice },
+    ],
+    events: [
+      { at: 0.4, run: () => send(QUESTION) },
+      { at: 7.7, run: () => click() },
+      { at: 7.75, run: () => act("answer", QUESTION.questions![0].options[0].label) },
     ],
     end: 10.6,
   },

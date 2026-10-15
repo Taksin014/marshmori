@@ -14,7 +14,9 @@
 //!   agent asks in its own UI exactly as it would without Marshmori. In an IDE's panel
 //!   (CLAUDE_CODE_ENTRYPOINT) and in Mamori's own tasks, Claude Code never sends
 //!   PermissionRequest, so there its PreToolUse waits too: Marshmori answers at once
-//!   unless that call is one Claude Code would have asked about.
+//!   unless that call is one Claude Code would have asked about. A question to the user
+//!   (AskUserQuestion) waits at PreToolUse everywhere: that's the only place its answer
+//!   can go in.
 //! * Started by Mamori as a task from the island (MARSHMORI_TASK is set) → the event
 //!   goes in as usual, tagged with that task's id so the island knows whose it is.
 //!
@@ -130,10 +132,18 @@ fn is_ide(entry: &str) -> bool {
 }
 
 /// Events where the agent waits for our answer before going on.
-fn waits_for_answer(agent: &str, event: &str, ide: bool, task: bool) -> bool {
+fn waits_for_answer(agent: &str, event: &str, ide: bool, task: bool, question: bool) -> bool {
     event == "PermissionRequest"
         || (agent == "antigravity" && event == "PreToolUse")
-        || (agent == "claude" && event == "PreToolUse" && (ide || task))
+        || (agent == "claude" && event == "PreToolUse" && (ide || task || question))
+}
+
+/// Claude Code asks the user something (the island shows it with its choices).
+fn is_question(body: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|v| v.get("tool_name").and_then(Value::as_str).map(|n| n == "AskUserQuestion"))
+        .unwrap_or(false)
 }
 
 /// Where Claude Code runs and which folder it started in (only Claude Code sets these).
@@ -174,7 +184,8 @@ fn main() {
     let task = std::env::var("MARSHMORI_TASK").ok().map(|t| clean(&t)).filter(|t| !t.is_empty());
     let origin = Origin::from_env(&agent);
     let Some((body, event)) = read_payload(&args.event, task.clone(), &origin) else { finish(None, fallback) };
-    let waits = waits_for_answer(&agent, &event, origin.ide(), task.is_some());
+    let question = agent == "claude" && event == "PreToolUse" && is_question(&body);
+    let waits = waits_for_answer(&agent, &event, origin.ide(), task.is_some(), question);
     // A task Mamori runs in the background has no terminal to ask in: when Marshmori
     // can't answer a permission prompt, the answer is no (never "ask someone else",
     // nobody is there). A PreToolUse it can't reach just carries on as usual.
@@ -400,14 +411,17 @@ mod tests {
 
     #[test]
     fn only_permission_prompts_wait() {
-        assert!(waits_for_answer("claude", "PermissionRequest", false, false));
-        assert!(waits_for_answer("codex", "PermissionRequest", false, false));
-        assert!(waits_for_answer("antigravity", "PreToolUse", false, false));
-        assert!(!waits_for_answer("claude", "PreToolUse", false, false), "a terminal session asks at PermissionRequest");
-        assert!(waits_for_answer("claude", "PreToolUse", true, false), "the VS Code panel never sends PermissionRequest");
-        assert!(waits_for_answer("claude", "PreToolUse", false, true), "nor does claude -p for a task");
-        assert!(!waits_for_answer("codex", "PreToolUse", true, true));
-        assert!(!waits_for_answer("antigravity", "Stop", false, false));
+        assert!(waits_for_answer("claude", "PermissionRequest", false, false, false));
+        assert!(waits_for_answer("codex", "PermissionRequest", false, false, false));
+        assert!(waits_for_answer("antigravity", "PreToolUse", false, false, false));
+        assert!(!waits_for_answer("claude", "PreToolUse", false, false, false), "a terminal session asks at PermissionRequest");
+        assert!(waits_for_answer("claude", "PreToolUse", true, false, false), "the VS Code panel never sends PermissionRequest");
+        assert!(waits_for_answer("claude", "PreToolUse", false, true, false), "nor does claude -p for a task");
+        assert!(!waits_for_answer("codex", "PreToolUse", true, true, false));
+        assert!(waits_for_answer("claude", "PreToolUse", false, false, true), "a question waits for its answer in a terminal too");
+        assert!(is_question(br#"{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{"questions":[]}}"#));
+        assert!(!is_question(br#"{"hook_event_name":"PreToolUse","tool_name":"Bash"}"#));
+        assert!(!waits_for_answer("antigravity", "Stop", false, false, false));
         assert!(is_ide("claude-vscode") && is_ide("claude-desktop") && !is_ide("cli") && !is_ide("sdk-cli"));
     }
 

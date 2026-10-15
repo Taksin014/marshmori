@@ -6,6 +6,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import type {
   AppInfo,
+  Answers,
   ApprovalView,
   ChatEvent,
   ChatProviderSetting,
@@ -55,6 +56,8 @@ export const api = {
   ackApproval: (id: number) => invoke<boolean>("approval_ack", { id }),
   decide: (id: number, decision: "allow" | "always" | "deny" | "terminal") =>
     invoke<boolean>("approval_decide", { id, decision }),
+  /** Answers a question card (false when it is no longer waiting). */
+  answer: (id: number, answers: Answers) => invoke<boolean>("approval_answer", { id, answers }),
   history: () => invoke<HistoryItem[]>("history_list"),
   dismissSession: (key: string) => invoke<void>("session_dismiss", { key }),
   allowAllOff: (key: string) => invoke<boolean>("session_allow_all_off", { key }),

@@ -2,7 +2,7 @@
 
 export type AgentId = "claude" | "codex" | "antigravity";
 export type SessionState = "idle" | "thinking" | "working" | "approval" | "waiting" | "done" | "error";
-export type ToolKind = "command" | "edit" | "read" | "search" | "web" | "agent" | "plan" | "mcp" | "other";
+export type ToolKind = "command" | "edit" | "read" | "search" | "web" | "agent" | "plan" | "mcp" | "question" | "other";
 export type ColorName = "cream" | "mint" | "lilac" | "peach" | "butter" | "sky";
 export type RoamWhen = "all" | "approvals" | "off";
 /** The agent CLIs the chat can go through (no API keys: each one's own sign-in). */
@@ -32,6 +32,25 @@ export interface Session {
   surface: string | null;
 }
 
+/** One choice of an agent's question, as the agent wrote it. */
+export interface QuestionOption {
+  label: string;
+  description: string;
+}
+
+/** One question of Claude Code's AskUserQuestion (it asks one to four at a time). */
+export interface Question {
+  /** The full question: the answer is filed under exactly this text. */
+  question: string;
+  /** A very short label for it ("Auth method"). */
+  header: string;
+  options: QuestionOption[];
+  multiSelect: boolean;
+}
+
+/** A question's answers: its text → the chosen label (several joined by ", "), or what the user typed. */
+export type Answers = Record<string, string>;
+
 export interface ApprovalView {
   id: number;
   agent: AgentId;
@@ -51,6 +70,8 @@ export interface ApprovalView {
   expiresAt: number;
   /** A task Mamori runs in the background: there is no terminal to answer in. */
   background: boolean;
+  /** The agent asks you something: the card shows its choices instead of allow/deny. */
+  questions: Question[] | null;
 }
 
 export interface HistoryItem {
@@ -276,6 +297,8 @@ export interface RoamRequest {
   expiresAt?: number | null;
   /** What Mamori reaches out with: its head on the long neck, or a hand that taps the pointer. */
   reach?: "head" | "hand";
+  /** An approval that is a question: its choices, to answer right at the pointer. */
+  questions?: Question[] | null;
 }
 
 export interface CursorEvent {

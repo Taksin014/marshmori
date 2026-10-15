@@ -66,6 +66,18 @@ pub fn approval_elsewhere(app: &AppHandle, ev: &Event, tool: &Tool) {
     );
 }
 
+pub fn question_elsewhere(app: &AppHandle, ev: &Event, question: &crate::agents::Question) {
+    if !enabled(app) {
+        return;
+    }
+    let project = crate::sessions::project_name(&ev.cwd);
+    show(
+        app,
+        &format!("{} ถามคุณ", ev.agent.label()),
+        &format!("{} · {project}", crate::agents::short(&question.question, 90)),
+    );
+}
+
 pub fn session_finished(app: &AppHandle, ev: &Event) {
     if !enabled(app) || island::is_visible(app) {
         return;

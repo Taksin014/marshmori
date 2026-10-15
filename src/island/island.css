@@ -303,6 +303,12 @@ button {
   }
 }
 
+@keyframes soft-fade {
+  from {
+    opacity: 0;
+  }
+}
+
 /* ── Mamori's seat (moves between the pill, the notch and the cards) ───────── */
 
 .seat {
@@ -624,8 +630,193 @@ button {
   user-select: text;
 }
 
+/* A plan waiting for your OK: taller, in plain text, and you can scroll through it. */
+.cmd.plan {
+  align-self: stretch;
+  font-family: inherit;
+  font-size: 13px;
+  word-break: break-word;
+  max-height: 150px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .cmd .add {
   color: #63e6be;
+}
+
+/* ── Questions (Claude Code's AskUserQuestion) ──────────────────────────────────
+   Laid out the way Claude Code asks: the question, then numbered choices with what
+   each one means underneath, then "อื่น ๆ" for your own words. */
+
+.card.question {
+  justify-content: flex-start;
+  gap: 10px;
+  padding-bottom: 18px;
+}
+
+.q-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.q-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.q-chip {
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--warn-text);
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
+.q-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.q-text {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+  user-select: text;
+}
+
+.q-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.q-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 6px 12px 6px 8px;
+  border: 0;
+  border-radius: 13px;
+  background: var(--card-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s,
+    transform 0.12s;
+}
+
+.q-opt:hover {
+  background: var(--card-3);
+}
+
+.q-opt:active {
+  transform: scale(0.985);
+}
+
+.q-opt:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.q-opt.on {
+  box-shadow: inset 0 0 0 1.5px var(--orange);
+  background: color-mix(in srgb, var(--orange) 10%, var(--card-2));
+}
+
+.q-num {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.q-opt.on .q-num {
+  background: var(--orange);
+  color: #1d1d1f;
+  box-shadow: none;
+}
+
+.q-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.q-label b {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.q-label small {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.q-own:not(.on) b {
+  color: var(--soft);
+}
+
+.q-opt.q-typing {
+  cursor: text;
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+}
+
+.q-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  caret-color: var(--blue);
+  font: inherit;
+  font-size: 13.5px;
+  padding: 4px 0;
+  user-select: text;
+}
+
+.q-input::placeholder {
+  color: var(--muted);
+}
+
+/* "Answer there instead" and "skip" stay together on the right, even when they wrap. */
+.q-links {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .cmd .del {
@@ -1448,15 +1639,24 @@ button {
   opacity: 1;
 }
 
+/* Windows' "Animation effects" off: nothing bounces, rises or swells, but nothing
+   jumps either. The pill and the panel cross-fade, and a panel's contents fade in
+   while the island glides open around them (main.ts, GENTLE). */
 @media (prefers-reduced-motion: reduce) {
   .layer,
   .layer.on {
-    transition: opacity 0.12s;
+    transition: opacity 0.22s ease;
     transform: none;
     filter: none;
   }
   .open.entering * {
     animation: none !important;
+  }
+  .open.entering > .head,
+  .open.entering > .body > .side,
+  .open.entering .card > :not(.slot):not(.timer),
+  .open.entering > .chat > * {
+    animation: soft-fade 0.26s ease-out 0.04s both !important;
   }
   .dot.busy,
   .typing i {

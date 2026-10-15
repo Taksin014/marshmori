@@ -60,6 +60,9 @@ pub struct RoamRequest {
     /// that taps the pointer).
     #[serde(default)]
     pub reach: Option<String>,
+    /// An approval that is a question: its choices, to answer right at the pointer.
+    #[serde(default)]
+    pub questions: Option<Vec<crate::agents::Question>>,
 }
 
 /// Sent to the overlay page: everything in the overlay's own CSS pixels.

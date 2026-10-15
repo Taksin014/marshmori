@@ -5,7 +5,7 @@
 // and no event name in the payload, so the relay passes it as --event.
 // Everything after this file works on `Event` only.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
@@ -75,7 +75,58 @@ pub enum ToolKind {
     Agent,
     Plan,
     Mcp,
+    /// The agent asks the user something and waits (Claude Code's AskUserQuestion).
+    Question,
     Other,
+}
+
+/// One choice of a question, as the agent wrote it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuestionOption {
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+/// One question of Claude Code's AskUserQuestion (it asks one to four at a time).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Question {
+    /// The full question; the answer is filed under exactly this text.
+    pub question: String,
+    /// A very short label for it ("Auth method").
+    #[serde(default)]
+    pub header: String,
+    pub options: Vec<QuestionOption>,
+    #[serde(default)]
+    pub multi_select: bool,
+}
+
+/// The questions in an AskUserQuestion call, or None when it doesn't look like one.
+pub fn questions(input: &Value) -> Option<Vec<Question>> {
+    let list = input.get("questions")?.as_array()?;
+    let text = |v: &Value, key: &str| v.get(key).and_then(Value::as_str).map(str::trim).unwrap_or("").to_string();
+    let out: Vec<Question> = list
+        .iter()
+        .filter_map(|q| {
+            let question = q.get("question").and_then(Value::as_str)?.to_string();
+            let options = q
+                .get("options")
+                .and_then(Value::as_array)
+                .map(|o| {
+                    o.iter()
+                        .filter_map(|o| {
+                            let label = text(o, "label");
+                            (!label.is_empty()).then(|| QuestionOption { label, description: text(o, "description") })
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let multi_select = q.get("multiSelect").or_else(|| q.get("multi_select")).and_then(Value::as_bool).unwrap_or(false);
+            (!question.trim().is_empty()).then(|| Question { question, header: text(q, "header"), options, multi_select })
+        })
+        .collect();
+    (!out.is_empty()).then_some(out)
 }
 
 #[derive(Debug, Clone)]
@@ -442,6 +493,19 @@ pub fn describe(name: &str, input: &Value) -> Tool {
             tool(ToolKind::Agent, summary, what, None)
         }
         "todowrite" | "update_plan" | "todo_write" | "task_boundary" => tool(ToolKind::Plan, "อัปเดตแผนงาน".into(), None, None),
+        "askuserquestion" => {
+            let list = questions(input).unwrap_or_default();
+            let summary = match list.first() {
+                Some(q) => format!("ถามคุณ: {}", short(&q.question, 40)),
+                None => "ถามคุณ".to_string(),
+            };
+            let detail = (!list.is_empty()).then(|| list.iter().map(|q| q.question.trim()).collect::<Vec<_>>().join("\n"));
+            tool(ToolKind::Question, summary, None, detail)
+        }
+        "exitplanmode" => {
+            let plan = field(input, &["plan"]);
+            tool(ToolKind::Plan, "ขออนุมัติแผนงาน".into(), None, plan.map(|p| clip_lines(&p, 40, 2400)))
+        }
         "call_mcp_tool" => {
             let action = field(input, &["ToolName", "tool_name", "name"]).unwrap_or_else(|| "เครื่องมือ".into());
             let server = field(input, &["ServerName", "server_name", "server"]);
@@ -519,6 +583,28 @@ mod tests {
         let tool = describe("mcp__github__create_issue", &json!({"title":"x"}));
         assert_eq!(tool.summary, "ใช้ create_issue (github)");
         assert_eq!(describe("Bash", &json!({"command":["git","status"]})).target.as_deref(), Some("git status"));
+    }
+
+    #[test]
+    fn questions_read_like_claude_code_asks_them() {
+        let input = json!({"questions": [
+            {"question": "Which framework?", "header": "Framework", "options": [{"label": "React", "description": "Component library"}, {"label": " "}, {"label": "Vue"}], "multiSelect": true},
+            {"question": "  "}
+        ]});
+        let list = questions(&input).unwrap();
+        assert_eq!(list.len(), 1, "an empty question is left out");
+        assert_eq!(list[0].header, "Framework");
+        assert!(list[0].multi_select);
+        assert_eq!(list[0].options.iter().map(|o| o.label.as_str()).collect::<Vec<_>>(), ["React", "Vue"]);
+        assert_eq!(list[0].options[0].description, "Component library");
+        assert!(questions(&json!({"command": "ls"})).is_none());
+
+        let tool = describe("AskUserQuestion", &input);
+        assert_eq!(tool.kind, ToolKind::Question);
+        assert_eq!(tool.summary, "ถามคุณ: Which framework?");
+        let plan = describe("ExitPlanMode", &json!({"plan": "# Plan\n1. Add login"}));
+        assert_eq!(plan.summary, "ขออนุมัติแผนงาน");
+        assert_eq!(plan.detail.as_deref(), Some("# Plan\n1. Add login"));
     }
 
     #[test]
