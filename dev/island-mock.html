@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marshmori island — mock</title>
+<style>
+  html { background: linear-gradient(160deg, #2b3a5e 0%, #5b4d8a 45%, #b9839c 100%) !important; min-height: 100%; }
+  html.wall-light { background: linear-gradient(160deg, #dfe9f6 0%, #c9d8ef 45%, #e9dff0 100%) !important; }
+  /* A strip of window title bar under the island, like the top of a real screen. */
+  body::before { content: ""; position: fixed; left: 0; right: 0; top: 0; height: 30px; background: rgba(255,255,255,.08); }
+</style>
+</head>
+<body>
+<!-- Same markup as index.html; the mock module runs first and fakes the Rust side. -->
+<div id="island" class="island" data-level="tuck">
+  <i class="ear left" aria-hidden="true"></i>
+  <i class="ear right" aria-hidden="true"></i>
+  <div class="clip">
+    <div id="compact" class="layer compact" aria-live="polite"></div>
+    <div id="open" class="layer open"></div>
+  </div>
+  <button id="seat" class="seat" type="button" aria-label="Mamori"></button>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script type="module" src="./mock-island.ts"></script>
+<script type="module" src="/src/island/main.ts"></script>
+<script type="module" src="./scenario.ts"></script>
+</body>
+</html>

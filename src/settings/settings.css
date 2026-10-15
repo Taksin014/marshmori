@@ -1,0 +1,889 @@
+/* The settings window, in the iOS Settings idiom: grouped, inset lists on a soft grey
+   background, switches, segmented controls. Follows the system light/dark mode. */
+
+:root {
+  --bg: #f2f2f7;
+  --side: #e9e9ee;
+  --group: #ffffff;
+  --row-hover: #f6f6f9;
+  --text: #000000;
+  --muted: #8a8a8e;
+  --sep: rgba(60, 60, 67, 0.18);
+  --tint: #007aff;
+  --green: #34c759;
+  --red: #ff3b30;
+  --orange: #ff9500;
+  --field: #eeeef0;
+  --switch-off: #e9e9eb;
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
+  color-scheme: light dark;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Leelawadee UI", "Noto Sans Thai", system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --side: #111113;
+    --group: #1c1c1e;
+    --row-hover: #232326;
+    --text: #ffffff;
+    --muted: #8d8d93;
+    --sep: rgba(84, 84, 88, 0.6);
+    --tint: #0a84ff;
+    --green: #30d158;
+    --red: #ff453a;
+    --orange: #ff9f0a;
+    --field: #2c2c2e;
+    --switch-off: #39393d;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+.app {
+  display: flex;
+  height: 100%;
+}
+
+/* ── Sidebar ───────────────────────────────────────────────────────────────── */
+
+.side {
+  width: 236px;
+  flex-shrink: 0;
+  background: var(--side);
+  padding: 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px;
+}
+
+.brand-mascot {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.brand-name {
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+
+.brand-sub {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+
+.tab:hover {
+  background: var(--row-hover);
+}
+
+.tab[aria-selected="true"] {
+  background: var(--tint);
+  color: #fff;
+}
+
+.tab:focus-visible,
+.btn:focus-visible,
+.seg button:focus-visible,
+.switch:focus-visible,
+.swatch:focus-visible,
+.choice:focus-visible {
+  outline: 2px solid var(--tint);
+  outline-offset: 2px;
+}
+
+.tab-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+/* ── Content ───────────────────────────────────────────────────────────────── */
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 26px 34px 40px;
+}
+
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  animation: page-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+h1 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 4px 0 6px;
+}
+
+.lead {
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0 0 18px;
+}
+
+.group-title {
+  font-size: 12.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin: 22px 16px 7px;
+}
+
+.group {
+  background: var(--group);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.group-foot {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 7px 16px 0;
+  line-height: 1.5;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 9px 16px;
+}
+
+.row + .row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 0;
+  border-top: 0.5px solid var(--sep);
+}
+
+.row .label {
+  flex: 1;
+  min-width: 0;
+}
+
+.row .label > div:first-child {
+  line-height: 1.35;
+}
+
+.row .sub {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.45;
+}
+
+.row .mono,
+.mono {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+  user-select: text;
+}
+
+.value {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* iOS switch */
+.switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 51px;
+  height: 31px;
+  border-radius: 999px;
+  background: var(--switch-off);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.25s ease;
+  margin: 0;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.15),
+    0 1px 1px rgba(0, 0, 0, 0.16);
+  transition: transform 0.3s cubic-bezier(0.3, 1.3, 0.5, 1);
+}
+
+.switch:checked {
+  background: var(--green);
+}
+
+.switch:checked::after {
+  transform: translateX(20px);
+}
+
+.switch:active::after {
+  width: 31px;
+}
+
+.switch:checked:active::after {
+  transform: translateX(16px);
+}
+
+/* Segmented control */
+.seg {
+  display: inline-flex;
+  background: var(--field);
+  border-radius: 9px;
+  padding: 2px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.seg button {
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.2s,
+    box-shadow 0.2s;
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--group);
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.12),
+    0 0 1px rgba(0, 0, 0, 0.1);
+  font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  .seg button[aria-pressed="true"] {
+    background: #636366;
+  }
+}
+
+input[type="text"] {
+  border: 0;
+  background: var(--field);
+  border-radius: 9px;
+  padding: 7px 10px;
+  min-width: 200px;
+  outline: none;
+}
+
+input[type="text"]:focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tint) 35%, transparent);
+}
+
+input[type="range"] {
+  accent-color: var(--tint);
+  width: 180px;
+}
+
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.range-row .value {
+  min-width: 64px;
+  text-align: right;
+}
+
+.btn {
+  border: 0;
+  border-radius: 999px;
+  height: 32px;
+  padding: 0 14px;
+  background: var(--field);
+  color: var(--tint);
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition:
+    transform 0.12s,
+    opacity 0.15s,
+    filter 0.15s;
+}
+
+.btn:hover {
+  filter: brightness(0.96);
+}
+
+.btn:active {
+  transform: scale(0.96);
+}
+
+.btn.filled {
+  background: var(--tint);
+  color: #fff;
+}
+
+.btn.danger {
+  color: var(--red);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.badge {
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.badge.ok {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+}
+
+.badge.warn {
+  color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+}
+
+.badge.off {
+  color: var(--muted);
+  background: var(--field);
+}
+
+.badge.bad {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.msg {
+  font-size: 13px;
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
+.msg.ok {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+}
+
+.msg.bad {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
+.msg.warn {
+  color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 10%, transparent);
+}
+
+/* Colour swatches */
+.swatches {
+  display: flex;
+  gap: 10px;
+}
+
+.swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 0;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.18);
+  position: relative;
+  transition: transform 0.15s;
+}
+
+.swatch:hover {
+  transform: scale(1.08);
+}
+
+.swatch[aria-checked="true"]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--tint);
+}
+
+/* A choice row with a check mark (the chat provider) */
+.choice {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.choice:hover {
+  background: var(--row-hover);
+}
+
+.choice:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.choice:disabled:hover {
+  background: transparent;
+}
+
+.check {
+  color: var(--tint);
+  width: 20px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+
+/* Mamori's preview */
+.stage {
+  position: relative;
+  height: 384px;
+  border-radius: 16px;
+  overflow: hidden;
+  background:
+    radial-gradient(90% 70% at 50% 100%, rgba(140, 166, 98, 0.22), transparent 70%),
+    linear-gradient(#f9f4ec, #efe7dc);
+  display: flex;
+  justify-content: center;
+}
+
+@media (prefers-color-scheme: dark) {
+  .stage {
+    background:
+      radial-gradient(90% 70% at 50% 100%, rgba(140, 166, 98, 0.25), transparent 70%),
+      linear-gradient(#26231f, #171512);
+  }
+}
+
+/* As wide as the stage: room for the Long Arms. */
+.stage-mascot {
+  width: 100%;
+  height: 336px;
+}
+
+.stage-actions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 12px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.stage-actions .btn {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(10px);
+  color: #1c1c1e;
+  height: 30px;
+  font-size: 13px;
+}
+
+.stage-name {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  font-size: 12.5px;
+  color: #7c6e66;
+}
+
+.stage-name b {
+  display: block;
+  font-size: 18px;
+  color: #3b302b;
+}
+
+@media (prefers-color-scheme: dark) {
+  .stage-name {
+    color: #a39a90;
+  }
+  .stage-name b {
+    color: #f2ece4;
+  }
+}
+
+.rules .row .label {
+  font-size: 13px;
+}
+
+/* ── The island's look: little desktops with the island on top ──────────────── */
+
+.looks {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px 16px 12px;
+}
+
+.look {
+  border: 0;
+  background: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.look-pic {
+  --wall: linear-gradient(160deg, #2b3a5e, #5b4d8a 55%, #b9839c);
+  --isl: #000;
+  --ink: rgba(255, 255, 255, 0.55);
+  --card: #1c1c1e;
+  --niche: linear-gradient(#2b2a2d, #111113);
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1.5;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--wall);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.18),
+    0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.look:hover .look-pic {
+  transform: translateY(-1px);
+}
+
+.look[aria-checked="true"] .look-pic {
+  box-shadow:
+    0 0 0 2.5px var(--group),
+    0 0 0 5px var(--tint);
+}
+
+.look[aria-checked="true"] .look-name {
+  font-weight: 600;
+}
+
+.look-light {
+  --wall: linear-gradient(160deg, #dfe9f6, #c9d8ef 55%, #e9dff0);
+  --isl: #fbfbfd;
+  --ink: rgba(0, 0, 0, 0.35);
+  --card: #f0f0f4;
+  --niche: linear-gradient(#564d47, #2a2522);
+}
+
+.look-forest {
+  --isl: #0c1711;
+  --ink: rgba(214, 240, 190, 0.55);
+  --card: #15251b;
+  --niche: linear-gradient(#29402f, #0b1510);
+}
+
+.look-midnight {
+  --isl: #0a0f22;
+  --ink: rgba(200, 212, 255, 0.55);
+  --card: #141b34;
+  --niche: linear-gradient(#273159, #0a0f22);
+}
+
+/* Auto: half light, half dark, split down the middle. */
+.look-auto {
+  --wall: linear-gradient(105deg, #dfe9f6 0 50%, #3d3f6e 50% 100%);
+  --isl: linear-gradient(90deg, #fbfbfd 0 50%, #000 50% 100%);
+  --ink: rgba(128, 128, 128, 0.7);
+  --card: linear-gradient(90deg, #f0f0f4 0 50%, #1c1c1e 50% 100%);
+}
+
+/* The pill hanging from the top, Mamori at its left end holding on to the edge. */
+.look-island {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 64%;
+  height: 21%;
+  transform: translateX(-50%);
+  border-radius: 0 0 9px 9px;
+  background: var(--isl);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 3px;
+  box-sizing: border-box;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+
+.look-island img,
+.look-island b {
+  width: 22%;
+  aspect-ratio: 1;
+  margin-top: 18%;
+  flex-shrink: 0;
+}
+
+.look-island b {
+  border-radius: 50%;
+  background: #f4e9e0;
+  aspect-ratio: 1.2;
+  width: 16%;
+}
+
+.look-island i,
+.look-card i {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ink);
+  flex: 0 0 34%;
+}
+
+.look-island i.short,
+.look-card i.short {
+  flex-basis: 16%;
+}
+
+/* A card below it, with Mamori's niche. */
+.look-card {
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 34%;
+  height: 34%;
+  border-radius: 7px;
+  background: var(--card);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  opacity: 0.92;
+}
+
+.look-niche {
+  width: 22%;
+  height: 64%;
+  border-radius: 4px;
+  background: var(--niche);
+  flex-shrink: 0;
+  margin-right: 3px;
+}
+
+.look-auto .look-niche {
+  background: linear-gradient(#564d47, #2a2522);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page,
+  .switch,
+  .switch::after {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* ── Welcome (the first thing after installing) ─────────────────────────────── */
+
+.welcome-hero {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 22px;
+  padding: 0 18px 0 0;
+  border-radius: 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(80% 90% at 20% 100%, rgba(140, 166, 98, 0.24), transparent 70%),
+    linear-gradient(#f9f4ec, #efe7dc);
+}
+
+@media (prefers-color-scheme: dark) {
+  .welcome-hero {
+    background:
+      radial-gradient(80% 90% at 20% 100%, rgba(140, 166, 98, 0.26), transparent 70%),
+      linear-gradient(#26231f, #171512);
+  }
+}
+
+.welcome-hero .stage-mascot {
+  width: 230px;
+  height: 230px;
+  flex-shrink: 0;
+}
+
+.welcome-text h1 {
+  margin: 0 0 8px;
+}
+
+.welcome-text .lead {
+  margin: 0;
+}
+
+.row.center {
+  justify-content: center;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.btn.big {
+  height: 38px;
+  padding: 0 22px;
+  font-size: 14.5px;
+  border-radius: 11px;
+}
+
+.welcome-done {
+  display: flex;
+  justify-content: flex-end;
+  margin: 18px 0 30px;
+}
+
+@media (max-width: 560px) {
+  .welcome-hero {
+    flex-direction: column;
+    padding: 0 16px 16px;
+    text-align: center;
+  }
+}
+
+/* Mamori's moods and the status bud of each. */
+.mood-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.mood-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--field);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.mood-chip:hover {
+  transform: translateY(-1px) scale(1.03);
+}
+
+.mood-chip:active {
+  transform: scale(0.95);
+}
+
+.mood-chip .bud {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.mood-chip .bud.heart {
+  background: #f4577d;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg) scale(0.85);
+}
+
+.mood-chip .bud.sleep {
+  display: grid;
+  place-items: center;
+  background: #5b5bd6;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}

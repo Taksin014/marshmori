@@ -1,0 +1,269 @@
+// What happens to one hook event, from the relay to the island and back.
+
+use std::time::Duration;
+
+use serde_json::Value;
+use tauri::{AppHandle, Emitter, Manager};
+
+use crate::agents::{self, Agent, Event, Kind, ToolKind};
+use crate::approvals::{self, ApprovalView, Decision, Shape};
+use crate::gate;
+use crate::sessions::State;
+use crate::{island, paths, roam, AppState};
+
+/// How long the island has to confirm it is showing a card.
+const ACK_TIMEOUT: Duration = Duration::from_millis(1500);
+
+pub fn emit_sessions(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let list = state.sessions.lock().unwrap().snapshot();
+    let _ = app.emit_to(island::LABEL, "sessions", list);
+}
+
+pub fn emit_approvals(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let list = state.approvals.snapshot();
+    // Mamori, if it is out with a card, goes home once that card is answered.
+    if state.roam.is_active() {
+        let _ = app.emit_to(roam::LABEL, "approvals", list.clone());
+    }
+    let _ = app.emit_to(island::LABEL, "approvals", list);
+}
+
+fn emit_history(app: &AppHandle, item: crate::sessions::HistoryItem) {
+    let _ = app.emit("history", item);
+}
+
+fn log(app: &AppHandle, ev: &Event, kind: &str, text: &str) {
+    let state = app.state::<AppState>();
+    let project = crate::sessions::project_name(&ev.cwd);
+    let item = state.sessions.lock().unwrap().log(ev.agent, &project, kind, text);
+    emit_history(app, item);
+}
+
+fn set_session(app: &AppHandle, key: &str, state_value: State, activity: impl Into<String>) {
+    let state = app.state::<AppState>();
+    state.sessions.lock().unwrap().set_state(key, state_value, activity);
+    emit_sessions(app);
+}
+
+/// Handles one event; the returned text (if any) is printed by the relay for the agent.
+pub fn handle_hook(app: &AppHandle, agent: &str, event: &str, body: &[u8]) -> Option<String> {
+    let agent = Agent::parse(agent)?;
+    let payload: Value = serde_json::from_slice(body).ok()?;
+    let ev = agents::normalize(agent, event, &payload);
+    // The hooks have this one: the transcript watcher (watch.rs) leaves it to them.
+    {
+        let state = app.state::<AppState>();
+        let mut hooked = state.hooked.lock().unwrap();
+        hooked.insert(ev.session_key(), paths::now_ms());
+        if hooked.len() > 400 {
+            let cutoff = paths::now_ms().saturating_sub(24 * 3600 * 1000);
+            hooked.retain(|_, at| *at > cutoff);
+        }
+    }
+    process(app, ev)
+}
+
+pub fn process(app: &AppHandle, ev: Event) -> Option<String> {
+    let state = app.state::<AppState>();
+    let agent = ev.agent;
+
+    let needs_decision = match ev.kind {
+        Kind::Permission => true,
+        Kind::ToolStart if agent == Agent::Antigravity && ev.name == "PreToolUse" => {
+            // A task Mamori runs always asks before a command: nobody is at a terminal.
+            let wanted = state.settings.lock().unwrap().antigravity_approvals || ev.task.is_some();
+            wanted && ev.tool.as_ref().map(|t| t.kind == ToolKind::Command).unwrap_or(false)
+        }
+        // Claude Code in an IDE's panel or in a background task: PermissionRequest never
+        // comes, so ask here — when Claude Code would have asked (see gate.rs).
+        Kind::ToolStart if gate::asks_at_pre_tool_use(&ev) => {
+            let project = ev.project_dir.clone().unwrap_or_else(|| ev.cwd.clone());
+            gate::claude_would_ask(&ev, &gate::Rules::load(&project))
+        }
+        _ => false,
+    };
+
+    // The agent moved on, so a card still open for it is stale: the whole session's
+    // when the turn ends or a new one starts, just that call's when a tool ran.
+    match ev.kind {
+        Kind::ToolEnd | Kind::ToolFailed => state.approvals.cancel_tool(&ev.session_key(), ev.tool_use_id.as_deref()),
+        Kind::Stop | Kind::StopFailure | Kind::Prompt | Kind::SessionEnd | Kind::Interrupt => {
+            // Antigravity's "Prompt" is PreInvocation, which comes between its own steps.
+            if !(agent == Agent::Antigravity && ev.kind == Kind::Prompt) {
+                state.approvals.cancel_session(&ev.session_key());
+            }
+        }
+        _ => {}
+    }
+
+    let line = state.sessions.lock().unwrap().apply(&ev);
+    emit_sessions(app);
+    if let Some(item) = line {
+        emit_history(app, item);
+    }
+    if let Some(task) = &ev.task {
+        crate::tasks::link(app, task, &ev.session_key());
+    }
+    if matches!(ev.kind, Kind::Stop | Kind::StopFailure) {
+        crate::notify::session_finished(app, &ev);
+    }
+
+    if needs_decision {
+        return permission(app, ev);
+    }
+    // Antigravity wants a JSON object back for every event; `{}` is "no decision".
+    (agent == Agent::Antigravity).then(|| "{}".to_string())
+}
+
+fn permission(app: &AppHandle, ev: Event) -> Option<String> {
+    let state = app.state::<AppState>();
+    let settings = state.settings.lock().unwrap().clone();
+    let key = ev.session_key();
+    let shape = Shape::of(ev.agent, &ev.name);
+    let tool = ev
+        .tool
+        .clone()
+        .unwrap_or_else(|| agents::describe("unknown", &Value::Null));
+
+    // Already answered at PreToolUse, and Claude Code asks again for the same call.
+    if shape == Shape::PermissionRequest {
+        if let Some(decision) = state.approvals.recall(ev.tool_use_id.as_deref()) {
+            return approvals::response_json(shape, Some(decision));
+        }
+    }
+
+    // "Allow for this round" is on for this session.
+    if state.sessions.lock().unwrap().allows_all(&key) {
+        set_session(app, &key, State::Working, tool.summary.clone());
+        log(app, &ev, "approval", &format!("อนุญาตอัตโนมัติ (ทั้งรอบนี้): {}", tool.summary));
+        state.approvals.remember(ev.tool_use_id.as_deref(), Decision::Allow);
+        return approvals::response_json(shape, Some(Decision::Allow));
+    }
+
+    let (task_id, surface) = {
+        let sessions = state.sessions.lock().unwrap();
+        let s = sessions.get(&key);
+        (ev.task.clone().or_else(|| s.and_then(|s| s.task.clone())), s.and_then(|s| s.surface.clone()))
+    };
+    let where_else = match ev.agent {
+        Agent::Antigravity => "Antigravity".to_string(),
+        _ => surface.unwrap_or_else(|| "terminal".into()),
+    };
+    // Mamori started this one in the background: the island is the only place to answer,
+    // whatever the "ask at Mamori" setting says, and no answer means no.
+    let background = task_id.is_some();
+    // A plan-only task stays a plan: it doesn't get to switch to changing things.
+    if background && tool.name == "ExitPlanMode" && task_id.as_deref().and_then(|id| crate::tasks::mode_of(app, id)) == Some(crate::tasks::Mode::Plan) {
+        log(app, &ev, "approval", "แผนเสร็จแล้ว (งานนี้ให้วางแผนอย่างเดียว)");
+        return approvals::response_json(shape, Some(Decision::Deny));
+    }
+    if background && !island::is_visible(app) {
+        set_session(app, &key, State::Thinking, format!("ไม่ได้รับอนุญาต: {} (ซ่อนแถบไว้อยู่)", tool.summary));
+        log(app, &ev, "approval", &format!("ไม่อนุญาต (ซ่อนแถบไว้อยู่): {}", tool.summary));
+        return approvals::response_json(shape, Some(Decision::Deny));
+    }
+    if (!settings.approvals && !background) || !island::is_visible(app) {
+        set_session(app, &key, State::Approval, format!("รออนุมัติใน {where_else}"));
+        crate::notify::approval_elsewhere(app, &ev, &tool);
+        return approvals::response_json(shape, None);
+    }
+
+    let now = paths::now_ms();
+    let timeout = settings.approval_timeout;
+    let elsewhere = match ev.agent {
+        _ if background => None,
+        Agent::Antigravity => Some("ให้ Antigravity ถามเอง".to_string()),
+        _ => Some(format!("ตอบใน {where_else} แทน")),
+    };
+    let view = ApprovalView {
+        id: state.approvals.next_id(),
+        agent: ev.agent,
+        agent_label: ev.agent.label().to_string(),
+        session_key: key.clone(),
+        project: crate::sessions::project_name(&ev.cwd),
+        cwd: ev.cwd.clone(),
+        tool: tool.name.clone(),
+        tool_kind: tool.kind,
+        title: tool.summary.clone(),
+        target: tool.target.clone(),
+        detail: tool.detail.clone(),
+        always_label: approvals::always_label(ev.agent),
+        elsewhere,
+        created_at: now,
+        expires_at: now + timeout * 1000,
+        background,
+        tool_use_id: ev.tool_use_id.clone(),
+    };
+    set_session(app, &key, State::Approval, format!("รออนุมัติ: {}", tool.summary));
+
+    let handle = app.clone();
+    let decision = state.approvals.wait(view, ACK_TIMEOUT, Duration::from_secs(timeout), move || {
+        emit_approvals(&handle);
+        crate::shortcuts::sync(&handle);
+    });
+    if let Some(d) = decision {
+        state.approvals.remember(ev.tool_use_id.as_deref(), d);
+    }
+
+    match decision {
+        Some(Decision::Allow) => {
+            set_session(app, &key, State::Working, tool.summary.clone());
+            log(app, &ev, "approval", &format!("อนุญาต: {}", tool.summary));
+        }
+        Some(Decision::Always) => {
+            state.sessions.lock().unwrap().set_allow_all(&key, true);
+            set_session(app, &key, State::Working, tool.summary.clone());
+            log(app, &ev, "approval", &format!("อนุญาตทั้งรอบนี้: {}", tool.summary));
+            // Anything else this session is already asking about goes through too.
+            state.approvals.decide_session(&key, Decision::Allow);
+        }
+        Some(Decision::Deny) => {
+            set_session(app, &key, State::Thinking, format!("ไม่อนุญาต: {}", tool.summary));
+            log(app, &ev, "approval", &format!("ไม่อนุญาต: {}", tool.summary));
+        }
+        Some(Decision::Terminal) | None if background => {
+            // Nobody answered (or the card couldn't be shown): a background task has no
+            // terminal to ask in instead, so it's a no.
+            set_session(app, &key, State::Thinking, format!("ไม่ได้รับอนุญาต: {}", tool.summary));
+            log(app, &ev, "approval", &format!("ไม่มีใครตอบ เลยไม่อนุญาต: {}", tool.summary));
+            return approvals::response_json(shape, Some(Decision::Deny));
+        }
+        Some(Decision::Terminal) | None => {
+            let still_there = state.sessions.lock().unwrap().get(&key).map(|s| s.state == State::Approval).unwrap_or(false);
+            if still_there {
+                set_session(app, &key, State::Approval, format!("รออนุมัติใน {where_else}"));
+            }
+        }
+    }
+    approvals::response_json(shape, decision)
+}
+
+/// Turns "allow for this round" off again for a session (from the island).
+pub fn stop_allowing_all(app: &AppHandle, key: &str) -> bool {
+    let changed = app.state::<AppState>().sessions.lock().unwrap().set_allow_all(key, false);
+    if changed {
+        emit_sessions(app);
+    }
+    changed
+}
+
+/// Answers a card from the island or a shortcut.
+pub fn decide(app: &AppHandle, id: u64, decision: Decision) -> bool {
+    app.state::<AppState>().approvals.decide(id, decision)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::agents::{normalize, Agent};
+    use crate::approvals::{response_json, Decision, Shape};
+    use serde_json::json;
+
+    #[test]
+    fn antigravity_permission_answers_are_objects() {
+        let ev = normalize(Agent::Antigravity, "PreToolUse", &json!({"conversationId":"c","toolCall":{"name":"run_command","args":{"CommandLine":"ls"}}}));
+        assert_eq!(ev.tool.as_ref().unwrap().kind, crate::agents::ToolKind::Command);
+        assert_eq!(response_json(Shape::Antigravity, Some(Decision::Deny)).unwrap(), r#"{"decision":"deny","reason":"The user denied this action in Marshmori."}"#);
+    }
+}

@@ -1,0 +1,13 @@
+[package]
+name = "marshmori-hook"
+description = "Relays Claude Code, Codex and Antigravity hook events to Marshmori"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "marshmori-hook"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"

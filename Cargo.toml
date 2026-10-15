@@ -1,0 +1,17 @@
+[workspace]
+members = ["src-tauri", "hook"]
+resolver = "2"
+
+[workspace.package]
+version = "0.6.1"
+edition = "2021"
+rust-version = "1.80"
+
+# Shared by the app and the hook relay. The relay is started by the agents on every
+# hook event, so it has to be small and start fast.
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

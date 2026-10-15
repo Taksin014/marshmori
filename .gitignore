@@ -1,0 +1,64 @@
+# --- dependencies ---
+node_modules/
+
+# --- build outputs ---
+dist/
+target/
+src-tauri/target/
+src-tauri/gen/
+*.tsbuildinfo
+
+# --- installers & release binaries (แนบใน GitHub Releases แทน) ---
+# (เฉพาะ /installer ที่ root — src-tauri/installer/ คือไฟล์ NSIS ที่ build ต้องใช้)
+/installer/
+*.exe
+*.msi
+*.msix
+*.nsis.zip
+*.AppImage
+*.deb
+*.dmg
+# ตัวเปิด installer ที่วางคู่กับ .exe ในโฟลเดอร์แจกจ่าย
+/install-marshmori.cmd
+
+# --- local working files ---
+Claude outputs/
+# previews/: เก็บเฉพาะภาพที่ README ใช้
+previews/*
+!previews/marshmori-approvals.png
+!previews/marshmori-boing-open.gif
+!previews/marshmori-moods-color.png
+!previews/marshmori-moods.gif
+
+# --- env & secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.cer
+*.crt
+*.jks
+*.keystore
+*.snk
+.tauri/
+
+# --- logs & caches ---
+*.log
+npm-debug.log*
+.vite/
+.cache/
+.eslintcache
+coverage/
+
+# --- IDE & OS ---
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+.claude/settings.local.json

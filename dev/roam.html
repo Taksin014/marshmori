@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mamori — ยืดคอไปหาเมาส์</title>
+<style>
+  :root { color-scheme: light; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: "Segoe UI Variable Text", "Segoe UI", "Leelawadee UI", "Noto Sans Thai", system-ui, sans-serif; }
+  /* A calm desktop to run across. */
+  .desk { position: fixed; inset: 0; background: radial-gradient(120% 90% at 15% 10%, #fbeee2 0%, #f3e6ea 38%, #e6e6f2 70%, #e1ece8 100%); }
+  .win { position: absolute; border-radius: 12px; box-shadow: 0 18px 50px rgba(40, 30, 25, 0.22), 0 2px 8px rgba(40, 30, 25, 0.1); overflow: hidden; }
+  .win .titlebar { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 14px; font-size: 12.5px; }
+  .win .titlebar i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+  .editor { left: 7%; top: 19%; width: 58%; height: 68%; background: #1c1b22; color: #d9d2e6; }
+  .editor .titlebar { background: #26252d; color: #a99fb8; }
+  .editor pre { margin: 0; padding: 18px 22px; font: 14px/1.75 "Cascadia Code", Consolas, "DejaVu Sans Mono", monospace; color: #d9d2e6; white-space: pre; }
+  .k { color: #f0a6c8; } .s { color: #a6e3b0; } .f { color: #9cc8ff; } .c { color: #7b7290; }
+  .term { right: 5%; top: 29%; width: 31%; height: 52%; background: #fbf9f6; color: #2c2622; }
+  .term .titlebar { background: #eeeae4; color: #6d625a; }
+  .term pre { margin: 0; padding: 16px 18px; font: 13px/1.7 "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace; white-space: pre-wrap; }
+  .term .p { color: #a86f45; }
+
+  /* The island at the top of the screen (a still mock; the real one is src/island). */
+  /* Its size and Mamori's seat move on springs (roam.ts), like the real island. */
+  .island { position: absolute; top: 0; left: 50%; transform: translateX(-50%); background: #000; border-radius: 0 0 19px 19px; height: 38px; width: 300px; color: #fff; z-index: 1; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
+  .island::before, .island::after { content: ""; position: absolute; top: 0; width: 14px; height: 14px; }
+  .island::before { left: -14px; background: radial-gradient(circle at 0 100%, transparent 13.5px, #000 14px); }
+  .island::after { right: -14px; background: radial-gradient(circle at 100% 100%, transparent 13.5px, #000 14px); }
+  /* Like the real pill: Mamori's head inside, its hands on the bottom edge. */
+  .island .seat { position: absolute; left: 0; top: 0; width: 80px; height: 80px; transform-origin: 0 0; transition: opacity 0.1s linear 0.06s; }
+  .island.away .seat { opacity: 0; }
+  .island .ticker { position: absolute; left: 54px; top: 0; height: 38px; display: flex; align-items: center; font-size: 13px; color: #8e8e93; white-space: nowrap; }
+  .island .ticker b { color: #fff; margin-right: 4px; }
+  .island .card { position: absolute; left: 118px; top: 44px; display: none; flex-direction: column; gap: 8px; }
+  .island.big .card { display: flex; }
+  .island.big .ticker { display: none; }
+  .island .card code { font: 12.5px "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace; background: #2c2c2e; color: #f2f2f7; border-radius: 10px; padding: 6px 10px; align-self: flex-start; }
+  .island .card .row { display: flex; gap: 6px; }
+  .island .card .row span { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 6px 12px; background: #2c2c2e; }
+  .island .card .row span.ok { background: #fff; color: #000; }
+
+  #roam { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+  #roam .bubble.show { pointer-events: auto; }
+
+  .controls { position: fixed; left: 16px; bottom: 16px; display: flex; gap: 8px; z-index: 3; }
+  .controls button { font: inherit; font-size: 13px; font-weight: 600; border: 0; border-radius: 999px; padding: 9px 14px; background: #1c1c1e; color: #fff; cursor: pointer; }
+  body.capture .controls { display: none; }
+
+  .fake-cursor { position: fixed; left: 0; top: 0; width: 22px; height: 30px; z-index: 5; pointer-events: none; display: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.25)); }
+  body.capture .fake-cursor { display: block; }
+  body.showcase .desk { background: radial-gradient(110% 90% at 30% 20%, #fbf8f4 0%, #f3ede6 55%, #ece4da 100%); }
+  body.showcase .desk > *, body.showcase .island { display: none; }
+  .click-ring { position: fixed; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; border: 2px solid rgba(10, 132, 255, 0.85); z-index: 4; pointer-events: none; opacity: 0; }
+</style>
+</head>
+<body>
+<div class="desk">
+  <div class="win editor">
+    <div class="titlebar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>&nbsp; Login.tsx — shop</div>
+<pre><span class="k">import</span> { useState } <span class="k">from</span> <span class="s">"react"</span>;
+<span class="k">import</span> { z } <span class="k">from</span> <span class="s">"zod"</span>;
+
+<span class="c">// ฟอร์มเข้าสู่ระบบ ตรวจข้อมูลก่อนส่ง</span>
+<span class="k">const</span> schema = z.<span class="f">object</span>({
+  email: z.<span class="f">string</span>().<span class="f">email</span>(),
+  password: z.<span class="f">string</span>().<span class="f">min</span>(<span class="s">8</span>),
+});
+
+<span class="k">export function</span> <span class="f">Login</span>() {
+  <span class="k">const</span> [error, setError] = <span class="f">useState</span>(<span class="s">""</span>);
+  <span class="k">return</span> &lt;form onSubmit={submit}&gt;…&lt;/form&gt;;
+}</pre>
+  </div>
+  <div class="win term">
+    <div class="titlebar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>&nbsp; Terminal — claude</div>
+<pre><span class="p">›</span> เพิ่มหน้า login ให้หน่อย
+
+● Read src/App.tsx
+● Write src/Login.tsx
+● Bash npm install zod
+  รออนุมัติ…</pre>
+  </div>
+</div>
+
+<div id="island" class="island">
+  <div class="seat" id="seat"></div>
+  <div class="ticker" id="ticker"><b>shop</b> · เขียน Login.tsx</div>
+  <div class="card">
+    <code>npm install zod</code>
+    <div class="row"><span>ไม่อนุญาต</span><span>อนุญาตเสมอ</span><span class="ok">อนุญาต</span></div>
+  </div>
+</div>
+
+<div id="roam"></div>
+
+<div class="controls">
+  <button id="b-approval">ขออนุมัติ</button>
+  <button id="b-done">งานเสร็จ</button>
+  <button id="b-error">มีปัญหา</button>
+  <button id="b-home">กลับบ้าน</button>
+</div>
+
+<svg class="fake-cursor" id="cursor" viewBox="0 0 22 30" aria-hidden="true"><path d="M2 2 L2 24 L8 18.5 L12.2 27.5 L16 25.8 L11.8 17 L19.5 17 Z" fill="#fff" stroke="#1d1a17" stroke-width="1.6" stroke-linejoin="round"/></svg>
+<div class="click-ring" id="ring"></div>
+
+<script type="module" src="./roam.ts"></script>
+</body>
+</html>

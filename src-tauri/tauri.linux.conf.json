@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["deb", "appimage"],
+    "resources": {
+      "../target/release/marshmori-hook.exe": null,
+      "../target/release/marshmori-hook": "marshmori-hook"
+    }
+  }
+}

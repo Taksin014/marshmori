@@ -1,0 +1,293 @@
+/* The roam window: transparent, full screen, click-through except over Mamori and the
+   bubble (Rust decides that from the rectangles we report). The bubble matches the
+   island: its look (dark, light or a theme), pill buttons. */
+
+:root {
+  --card: rgba(22, 22, 24, 0.96);
+  --card-2: #2c2c2e;
+  --card-3: #3a3a3c;
+  --text: #fff;
+  --muted: #8e8e93;
+  --soft: #d1d1d6;
+  --code: #f2f2f7;
+  --edge: rgba(255, 255, 255, 0.08);
+  --primary: #fff;
+  --primary-text: #000;
+  --primary-hover: #e5e5ea;
+  --orange: #ff9f0a;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Leelawadee UI", "Noto Sans Thai", system-ui, sans-serif;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The bubble wears the island's look (see island.css). */
+:root[data-look="light"] {
+  --card: rgba(251, 251, 253, 0.97);
+  --card-2: #e9e9ee;
+  --card-3: #dcdce3;
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --soft: #3a3a3c;
+  --code: #1d1d1f;
+  --edge: rgba(0, 0, 0, 0.1);
+  --primary: #1d1d1f;
+  --primary-text: #fff;
+  --primary-hover: #3a3a3c;
+  --orange: #e67e00;
+}
+
+:root[data-look="forest"] {
+  --card: rgba(14, 26, 19, 0.97);
+  --card-2: #213528;
+  --card-3: #2c4535;
+  --text: #f1f6ec;
+  --muted: #98b09e;
+  --soft: #cfdccf;
+  --code: #e8f3da;
+  --edge: rgba(214, 240, 190, 0.1);
+  --primary: #e8f3da;
+  --primary-text: #0c1711;
+  --primary-hover: #d3e6bd;
+}
+
+:root[data-look="midnight"] {
+  --card: rgba(12, 17, 38, 0.97);
+  --card-2: #1f2847;
+  --card-3: #2a355a;
+  --text: #f2f4ff;
+  --muted: #98a1c6;
+  --soft: #d3d8f0;
+  --code: #f2f4ff;
+  --edge: rgba(200, 212, 255, 0.1);
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+}
+
+/* The whole overlay: Mamori's head, its long neck and its hands on the island's edge. */
+.roam-box {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  visibility: hidden;
+}
+
+.bubble {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 320px;
+  min-width: 200px;
+  background: var(--card);
+  border-radius: 20px;
+  padding: 12px 14px 12px;
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.35),
+    0 0 0 0.5px var(--edge) inset;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+  will-change: transform;
+}
+
+.bubble.show {
+  opacity: 1;
+  pointer-events: auto;
+  animation: pop 0.42s cubic-bezier(0.2, 1.35, 0.4, 1) both;
+}
+
+@keyframes pop {
+  from {
+    scale: 0.7;
+  }
+  to {
+    scale: 1;
+  }
+}
+
+/* The little tail pointing at Mamori's head. */
+.bubble::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--tail, 50%) - 7px);
+  bottom: -6px;
+  width: 14px;
+  height: 14px;
+  background: var(--card);
+  transform: rotate(45deg);
+  border-bottom-right-radius: 4px;
+}
+
+.bubble.below::after {
+  bottom: auto;
+  top: -6px;
+  border-bottom-right-radius: 0;
+  border-top-left-radius: 4px;
+}
+
+.bubble.kind-approval {
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 159, 10, 0.35) inset;
+}
+
+.b-title {
+  font-weight: 650;
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  line-height: 1.35;
+}
+
+.b-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.b-text {
+  font-size: 13px;
+  color: var(--soft);
+  line-height: 1.45;
+  max-height: 58px;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.b-text.mono {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12.5px;
+  color: var(--code);
+  background: var(--card-2);
+  border-radius: 10px;
+  padding: 6px 9px;
+}
+
+.b-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.b-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  border: 0;
+  border-radius: 999px;
+  height: 32px;
+  padding: 0 14px;
+  background: var(--card-2);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    transform 0.12s;
+}
+
+.b-btn:hover {
+  background: var(--card-3);
+}
+
+.b-btn:active {
+  transform: scale(0.95);
+}
+
+.b-btn.primary {
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+.b-btn.primary:hover {
+  background: var(--primary-hover);
+}
+
+.b-link {
+  font: inherit;
+  font-size: 12.5px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 4px 2px;
+}
+
+.b-link:hover {
+  color: var(--text);
+}
+
+.b-btn:focus-visible,
+.b-link:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: 2px;
+}
+
+.b-timer {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--edge);
+  overflow: hidden;
+  margin-top: -2px;
+}
+
+.b-timer i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--orange);
+  border-radius: 2px;
+  transition: width 0.25s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble.show {
+    animation: none;
+  }
+}
+
+/* A tap on the pointer: a soft ring that spreads and fades. */
+.ripple {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: 50%;
+  border: 2.5px solid var(--ripple, rgba(255, 255, 255, 0.95));
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12), 0 0 12px rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+  animation: ripple 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes ripple {
+  from {
+    transform: scale(0.3);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ripple {
+    display: none;
+  }
+}

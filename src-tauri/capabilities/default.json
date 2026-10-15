@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What Marshmori's windows may do. Everything that touches the system goes through Marshmori's own commands.",
+  "windows": ["island", "settings", "roam"],
+  "permissions": ["core:default"]
+}
