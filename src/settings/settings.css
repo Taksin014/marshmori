@@ -760,13 +760,12 @@ input[type="range"] {
   background: linear-gradient(#564d47, #2a2522);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .page,
-  .switch,
-  .switch::after {
-    animation: none;
-    transition: none;
-  }
+/* Calm motion follows the motion setting too (core/spring.ts, useMotion). */
+:where(:root[data-motion="reduced"]) .page,
+:where(:root[data-motion="reduced"]) .switch,
+:where(:root[data-motion="reduced"]) .switch::after {
+  animation: none;
+  transition: none;
 }
 
 /* ── Welcome (the first thing after installing) ─────────────────────────────── */

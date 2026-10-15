@@ -385,15 +385,15 @@ body {
   transition: width 0.25s linear;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .bubble,
-  .bubble.show {
-    scale: 1;
-  }
-  .bubble.show,
-  .bubble.show .b-opt {
-    animation: none;
-  }
+/* Calm motion (core/spring.ts, useMotion: Windows' animations off, unless the
+   setting says "full"): the bubble just appears. */
+:where(:root[data-motion="reduced"]) .bubble,
+:where(:root[data-motion="reduced"]) .bubble.show {
+  scale: 1;
+}
+:where(:root[data-motion="reduced"]) .bubble.show,
+:where(:root[data-motion="reduced"]) .bubble.show .b-opt {
+  animation: none;
 }
 
 /* A tap on the pointer: a soft ring that spreads and fades. */
@@ -420,8 +420,6 @@ body {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ripple {
-    display: none;
-  }
+:where(:root[data-motion="reduced"]) .ripple {
+  display: none;
 }

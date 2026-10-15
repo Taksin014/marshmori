@@ -5,10 +5,12 @@
 //     &scene=approval|question|done|showcase
 //   &reach=head|hand   what Mamori reaches out with (default: head for questions and
 //                      problems, a hand that taps for finished work — like the app)
+//   &motion=system     calm motion when the browser asks for reduced motion (default:
+//                      full, like the app with "เต็มที่เสมอ")
 
 import "../src/roam/roam.css";
 
-import { Spring } from "../src/core/spring";
+import { Spring, useMotion } from "../src/core/spring";
 import type { RoamRequest } from "../src/core/types";
 import type { ExpressionName } from "../src/mascot/expressions";
 import { Marshmori } from "../src/mascot/marsh";
@@ -79,6 +81,7 @@ if (showcase) document.body.classList.add("showcase");
 const box = document.createElement("div");
 const roamer = new Roamer(box, "cream", { unit: showcase ? ROAM_UNIT * BIG : ROAM_UNIT });
 (window as unknown as { __roamer: Roamer }).__roamer = roamer;
+useMotion(() => (params.get("motion") === "system" ? "system" : "full"), (reduced) => roamer.setReducedMotion(reduced));
 const view = new RoamView(document.getElementById("roam")!, box, roamer, {
   onRects: () => {},
   onAction: (a, answer) => act(a, answer),

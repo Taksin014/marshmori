@@ -3,6 +3,8 @@
 // keeps its velocity when the target changes mid-flight, so a new state blends into
 // the motion instead of restarting it.
 
+import type { MotionSetting } from "./types";
+
 export class Spring {
   value: number;
   target: number;
@@ -172,4 +174,33 @@ export class Motion<K extends string> {
   }
 }
 
-export const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+// Windows' "Animation effects" off shows up as prefers-reduced-motion. The motion
+// setting (ตั้งค่า › ทั่วไป › การเคลื่อนไหว) either follows it or overrides it, so each
+// page keeps the setting here and asks reducedMotion() instead of the media query.
+const reduceQuery = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
+let motionSetting: MotionSetting = "system";
+
+/** Windows' "Animation effects" are off, whatever the setting says. */
+export const systemReducesMotion = () => reduceQuery?.matches === true;
+
+/** Calm motion only: Windows' animations are off and the setting follows Windows. */
+export const reducedMotion = () => motionSetting !== "full" && systemReducesMotion();
+
+/**
+ * Keeps reducedMotion() and `<html data-motion="reduced|full">` (what the CSS goes by)
+ * in step with the setting, now and whenever Windows' setting changes. `changed` hears
+ * about every flip, the first one included.
+ */
+export function useMotion(get: () => MotionSetting | undefined, changed?: (reduced: boolean) => void): () => void {
+  const apply = () => {
+    motionSetting = get() ?? "system";
+    const motion = reducedMotion() ? "reduced" : "full";
+    if (document.documentElement.dataset.motion !== motion) {
+      document.documentElement.dataset.motion = motion;
+      changed?.(motion === "reduced");
+    }
+  };
+  apply();
+  reduceQuery?.addEventListener("change", apply);
+  return apply;
+}

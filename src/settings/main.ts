@@ -6,11 +6,13 @@ import "./settings.css";
 import { api, errorText, on } from "../core/ipc";
 import { h, icon } from "../core/dom";
 import { configureSound, sound } from "../core/sound";
+import { systemReducesMotion, useMotion } from "../core/spring";
 import {
   AGENT_COLORS,
   ISLAND_BOUNCE_LABELS,
   ISLAND_LOOK_LABELS,
   ISLAND_LOOKS,
+  MOTION_LABELS,
   PROVIDER_LABELS,
   REACH_WITH_LABELS,
   type AppInfo,
@@ -19,6 +21,7 @@ import {
   type HookStatus,
   type IslandBounce,
   type IslandLook,
+  type MotionSetting,
   type ProviderStatus,
   type ReachWith,
   type Settings,
@@ -55,6 +58,9 @@ const state = {
   connecting: false,
 };
 
+/** This window moves calmly or fully with the motion setting too. */
+const applyMotion = useMotion(() => state.settings?.motion);
+
 /** Mamori's preview stays alive between renders (it's a WebGL scene). */
 const previewEl = h("div", { class: "stage-mascot" });
 let preview: Buddy | null = null;
@@ -81,6 +87,7 @@ function update(patch: Partial<Settings>, delay = 0) {
 }
 
 function applyLocal(s: Settings) {
+  applyMotion();
   brand.setColor(s.color);
   preview?.setColor(s.color);
   configureSound(s.sound, s.volume);
@@ -241,6 +248,18 @@ function generalPage(s: Settings): HTMLElement {
             s.islandBounce ?? "boing",
             (["soft", "boing", "extra"] as IslandBounce[]).map((k) => [k, ISLAND_BOUNCE_LABELS[k]]),
             (v) => update({ islandBounce: v }),
+          ),
+        ),
+        row(
+          "การเคลื่อนไหว",
+          `ตามระบบ: ถ้าปิด Animation effects ของ Windows แถบจะขยายนุ่ม ๆ ไม่เด้ง และ ${mascot()} จะไม่ออกมาสะกิด · เต็มที่เสมอ: เด้งดึ๋งและมาสะกิดได้ตลอด${
+            systemReducesMotion() ? " (ตอนนี้ Windows ปิดไว้อยู่)" : ""
+          }`,
+          segmented<MotionSetting>(
+            "การเคลื่อนไหว",
+            s.motion ?? "system",
+            (["system", "full"] as MotionSetting[]).map((k) => [k, MOTION_LABELS[k]]),
+            (v) => update({ motion: v }),
           ),
         ),
         row(

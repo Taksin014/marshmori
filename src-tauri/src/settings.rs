@@ -56,6 +56,10 @@ pub struct Settings {
     /// How much the island bounces as it opens: "soft", "boing" (wobbles back, the
     /// default) or "extra".
     pub island_bounce: String,
+    /// How much things move: "system" follows Windows' "Animation effects" (off: the
+    /// island glides without bouncing and Mamori doesn't reach out to the pointer), or
+    /// "full" (always the whole bounce and the reach, whatever Windows says).
+    pub motion: String,
     /// What Mamori nudges you with when it reaches out to the pointer: "head" (its
     /// head on its long neck), "hand" (a long arm that taps the pointer), or "auto"
     /// (whichever suits the news: the head for a question or a problem, a tap for
@@ -92,6 +96,7 @@ impl Default for Settings {
             island_look: "auto".into(),
             hover_delay: 600,
             island_bounce: "boing".into(),
+            motion: "system".into(),
             reach_with: "auto".into(),
             folder_menu: true,
             hooks_off: Vec::new(),
@@ -131,6 +136,9 @@ impl Settings {
         }
         if !matches!(self.island_bounce.as_str(), "soft" | "boing" | "extra") {
             self.island_bounce = "boing".into();
+        }
+        if !matches!(self.motion.as_str(), "system" | "full") {
+            self.motion = "system".into();
         }
         self.hooks_off.retain(|a| matches!(a.as_str(), "claude" | "codex" | "antigravity"));
         self.hooks_off.dedup();
@@ -214,11 +222,14 @@ mod tests {
         assert_eq!(s.reach_with, "auto");
         // 0.5's files have no bounce setting yet: they get the bouncy default.
         assert_eq!(s.island_bounce, "boing");
-        let (s, _) = parse(br#"{"islandLook":"forest","hoverDelay":9000,"reachWith":"hand","islandBounce":"soft","settingsVersion":3}"#);
+        // Files from before the motion setting follow Windows, as the app always did.
+        assert_eq!(s.motion, "system");
+        let (s, _) = parse(br#"{"islandLook":"forest","hoverDelay":9000,"reachWith":"hand","islandBounce":"soft","motion":"full","settingsVersion":3}"#);
         assert_eq!(s.island_look, "forest");
         assert_eq!(s.hover_delay, 3000);
         assert_eq!(s.reach_with, "hand");
         assert_eq!(s.island_bounce, "soft");
+        assert_eq!(s.motion, "full");
     }
 
     #[test]
@@ -278,6 +289,7 @@ mod tests {
             island_look: "neon".into(),
             reach_with: "feet".into(),
             island_bounce: "wobbly".into(),
+            motion: "never".into(),
             mascot_name: "  \u{7}  ".into(),
             ..Settings::default()
         }
@@ -289,6 +301,7 @@ mod tests {
         assert_eq!(s.island_look, "auto");
         assert_eq!(s.reach_with, "auto");
         assert_eq!(s.island_bounce, "boing");
+        assert_eq!(s.motion, "system");
         assert_eq!(s.mascot_name, "Mamori");
     }
 }

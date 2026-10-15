@@ -82,6 +82,8 @@ pub struct Go {
     color: String,
     /// The island's look, so the bubble matches it.
     look: String,
+    /// The motion setting: "full" moves fully even with Windows' animations off.
+    motion: String,
     sound: bool,
     volume: f64,
 }
@@ -362,10 +364,10 @@ pub fn start(app: &AppHandle, request: RoamRequest, nest: Point, nest_scale: f64
     }
     let origin = island_win.outer_position().map_err(|e| e.to_string())?;
     let island_scale = island_win.scale_factor().unwrap_or(frame.scale);
-    let (color, look, sound, volume) = {
+    let (color, look, motion, sound, volume) = {
         let state = app.state::<AppState>();
         let s = state.settings.lock().unwrap();
-        (s.color.clone(), s.island_look.clone(), s.sound, s.volume)
+        (s.color.clone(), s.island_look.clone(), s.motion.clone(), s.sound, s.volume)
     };
     let go = Go {
         trip: 0,
@@ -376,6 +378,7 @@ pub fn start(app: &AppHandle, request: RoamRequest, nest: Point, nest_scale: f64
         screen: Point { x: frame.w as f64 / frame.scale, y: frame.h.saturating_sub(1) as f64 / frame.scale },
         color,
         look,
+        motion,
         sound,
         volume,
     };

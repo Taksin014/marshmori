@@ -8,20 +8,23 @@ import "./roam.css";
 import { api, on } from "../core/ipc";
 import { useLook } from "../core/look";
 import { configureSound, sound } from "../core/sound";
-import { reducedMotion } from "../core/spring";
+import { useMotion } from "../core/spring";
 import { Roamer } from "./roamer";
 import { RoamView, type RoamAction } from "./view";
 
 const root = document.getElementById("roam")!;
 const box = document.createElement("div");
 const roamer = new Roamer(box);
-roamer.setReducedMotion(reducedMotion());
 
 /** The trip Rust is running; every message back names it so late ones are ignored. */
 let trip = 0;
 let reportedShown = 0;
 let look: import("../core/types").IslandLook = "auto";
 const applyLook = useLook(() => look);
+// The trip brings the motion setting along: "full" moves fully even with Windows'
+// animations off (Mamori only comes out then, the island keeps it home otherwise).
+let motion: import("../core/types").MotionSetting = "system";
+const applyMotion = useMotion(() => motion, (reduced) => roamer.setReducedMotion(reduced));
 
 const view = new RoamView(root, box, roamer, {
   onRects: (rects) => void api.roamSetHitRects(rects).catch(() => {}),
@@ -89,6 +92,8 @@ async function start() {
     trip = go.trip;
     look = go.look ?? "auto";
     applyLook();
+    motion = go.motion ?? "system";
+    applyMotion();
     roamer.setColor(go.color);
     view.screen = { w: go.screen.x, h: go.screen.y };
     roamer.screen = view.screen;

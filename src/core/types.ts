@@ -111,6 +111,8 @@ export interface Settings {
   hoverDelay: number;
   /** How much the island bounces as it opens. */
   islandBounce: IslandBounce;
+  /** Follow Windows' "Animation effects" (off: calm glides, Mamori stays home), or always move fully. */
+  motion: MotionSetting;
   /** What Mamori nudges you with when it reaches out: its head, a hand, or whichever suits the news. */
   reachWith: ReachWith;
   /** "สั่งงาน Mamori ที่นี่" in Explorer's right-click menu on folders. */
@@ -141,6 +143,17 @@ export const ISLAND_BOUNCE_LABELS: Record<IslandBounce, string> = {
   soft: "นุ่ม ๆ",
   boing: "ดึ๋ง",
   extra: "ดึ๋งมาก",
+};
+
+/**
+ * "system" follows Windows' "Animation effects" (prefers-reduced-motion): with them off
+ * the island glides without bouncing and Mamori doesn't reach out. "full" ignores that.
+ */
+export type MotionSetting = "system" | "full";
+
+export const MOTION_LABELS: Record<MotionSetting, string> = {
+  system: "ตามระบบ Windows",
+  full: "เต็มที่เสมอ",
 };
 
 // ── Tasks Mamori runs for you (src-tauri/src/tasks.rs) ──────────────────────────

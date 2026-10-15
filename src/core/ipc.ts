@@ -16,6 +16,7 @@ import type {
   HistoryItem,
   HookStatus,
   IslandLook,
+  MotionSetting,
   OpenRequest,
   ProviderStatus,
   RoamRequest,
@@ -152,6 +153,8 @@ export interface RoamGo {
   color: ColorName;
   /** The island's look: the bubble matches it. */
   look: IslandLook;
+  /** The motion setting: "full" moves fully even with Windows' animations off. */
+  motion: MotionSetting;
   sound: boolean;
   volume: number;
 }

@@ -1,7 +1,7 @@
 // Fakes the Rust side so the island can be opened in a normal browser:
 // http://127.0.0.1:1420/dev/island-mock.html?scenario=tuck|peek|pill|panel|approval|done|error|drop|file|chat|empty|away
 //   |task-form|task-run|task-done|round|folder|task-files|question|questions|plan
-//   &look=auto|dark|light|forest|midnight  &bounce=soft|boing|extra
+//   &look=auto|dark|light|forest|midnight  &bounce=soft|boing|extra  &motion=system|full
 
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 
@@ -211,6 +211,7 @@ const settings = {
   islandLook: look,
   hoverDelay: 600,
   islandBounce: params.get("bounce") ?? "boing",
+  motion: params.get("motion") ?? "system",
   reachWith: "auto",
   settingsVersion: 4,
   onboarded: true,

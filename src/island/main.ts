@@ -22,7 +22,7 @@ import { fileSize, h, icon, timeAgo } from "../core/dom";
 import { renderMarkdown } from "../core/markdown";
 import { useLook } from "../core/look";
 import { configureSound, sound } from "../core/sound";
-import { feel, Motion, reducedMotion, type Feel } from "../core/spring";
+import { feel, Motion, reducedMotion, useMotion, type Feel } from "../core/spring";
 import {
   AGENT_COLORS,
   AGENT_SKINS,
@@ -2214,10 +2214,13 @@ document.addEventListener("keydown", (e) => {
 // ── Start ───────────────────────────────────────────────────────────────────────
 
 const applyLook = useLook(() => state.settings?.islandLook);
+// The island itself still glides with reduced motion (GENTLE); Mamori just keeps still.
+const applyMotion = useMotion(() => state.settings?.motion, (reduced) => marsh.setReducedMotion(reduced));
 
 function applySettings(s: Settings) {
   state.settings = s;
   applyLook();
+  applyMotion();
   seatEl.setAttribute("aria-label", s.mascotName || "Mamori");
   marsh.setColor(s.color);
   configureSound(s.sound, s.volume);
@@ -2226,8 +2229,6 @@ function applySettings(s: Settings) {
 }
 
 async function start() {
-  // The island itself still glides with reduced motion (GENTLE); Mamori just keeps still.
-  marsh.setReducedMotion(reducedMotion());
   try {
     const snap = await api.snapshot();
     applySettings(snap.settings);

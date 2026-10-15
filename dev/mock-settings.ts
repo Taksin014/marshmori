@@ -24,6 +24,7 @@ let settings = {
   islandLook: "auto",
   hoverDelay: 600,
   islandBounce: "boing",
+  motion: "system",
   reachWith: "auto",
   folderMenu: true,
   settingsVersion: 4,
@@ -61,7 +62,7 @@ mockIPC(
         settings = (args as { settings: typeof settings }).settings;
         return settings;
       case "app_info":
-        return { version: "0.6.1", dataDir: "C:\\Users\\me\\AppData\\Roaming\\Marshmori", logFile: "C:\\Users\\me\\AppData\\Local\\Marshmori\\marshmori.log", relayPath: "C:\\Users\\me\\AppData\\Local\\Marshmori\\bin\\marshmori-hook.exe", port: 51234 };
+        return { version: "0.7.0", dataDir: "C:\\Users\\me\\AppData\\Roaming\\Marshmori", logFile: "C:\\Users\\me\\AppData\\Local\\Marshmori\\marshmori.log", relayPath: "C:\\Users\\me\\AppData\\Local\\Marshmori\\bin\\marshmori-hook.exe", port: 51234 };
       case "hooks_status":
         return connected
           ? [hook("claude", "Claude Code", true), hook("codex", "Codex", true), hook("antigravity", "Antigravity", true)]

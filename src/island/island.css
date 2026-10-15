@@ -1641,27 +1641,27 @@ button {
 
 /* Windows' "Animation effects" off: nothing bounces, rises or swells, but nothing
    jumps either. The pill and the panel cross-fade, and a panel's contents fade in
-   while the island glides open around them (main.ts, GENTLE). */
-@media (prefers-reduced-motion: reduce) {
-  .layer,
-  .layer.on {
-    transition: opacity 0.22s ease;
-    transform: none;
-    filter: none;
-  }
-  .open.entering * {
-    animation: none !important;
-  }
-  .open.entering > .head,
-  .open.entering > .body > .side,
-  .open.entering .card > :not(.slot):not(.timer),
-  .open.entering > .chat > * {
-    animation: soft-fade 0.26s ease-out 0.04s both !important;
-  }
-  .dot.busy,
-  .typing i {
-    animation: none;
-  }
+   while the island glides open around them (main.ts, GENTLE). `data-motion` comes
+   from the motion setting (core/spring.ts, useMotion), which may ignore Windows;
+   `:where()` keeps these rules as specific as they were inside the media query. */
+:where(:root[data-motion="reduced"]) .layer,
+:where(:root[data-motion="reduced"]) .layer.on {
+  transition: opacity 0.22s ease;
+  transform: none;
+  filter: none;
+}
+:where(:root[data-motion="reduced"]) .open.entering * {
+  animation: none !important;
+}
+:where(:root[data-motion="reduced"]) .open.entering > .head,
+:where(:root[data-motion="reduced"]) .open.entering > .body > .side,
+:where(:root[data-motion="reduced"]) .open.entering .card > :not(.slot):not(.timer),
+:where(:root[data-motion="reduced"]) .open.entering > .chat > * {
+  animation: soft-fade 0.26s ease-out 0.04s both !important;
+}
+:where(:root[data-motion="reduced"]) .dot.busy,
+:where(:root[data-motion="reduced"]) .typing i {
+  animation: none;
 }
 
 /* "Allow for this round" is on for the session shown. */
