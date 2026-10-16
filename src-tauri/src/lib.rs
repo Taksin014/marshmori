@@ -389,6 +389,9 @@ fn hooks_uninstall(app: AppHandle, agent: String) -> Result<String, String> {
     let message = installer::uninstall(agent)?;
     // Taken off on purpose: Marshmori won't connect it again by itself.
     remember_hooks_off(&app, agent, true);
+    if agent == agents::Agent::Antigravity {
+        tasks::stop_ungated(&app);
+    }
     let _ = app.emit("hooks", installer::status_all());
     Ok(message)
 }

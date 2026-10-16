@@ -299,8 +299,26 @@ impl Approvals {
 const DENY_MESSAGE: &str = "The user denied this action in Marshmori.";
 const ALLOW_REASON: &str = "Allowed in Marshmori.";
 
-/// What the relay prints for the agent. `None` prints nothing, which every agent
-/// reads as "no decision" and handles with its own prompt.
+/// Antigravity's PreToolUse when Marshmori has nothing against the call. agy (1.3.5) reads an
+/// answer without a decision (`{}`) as a deny, and a hook's "allow" grants nothing: agy still
+/// runs its own permission check afterwards (and asks, or in print mode declines). So "allow"
+/// is how a hook says "no objection" there, the same as Antigravity's own plugins do.
+pub const ANTIGRAVITY_NO_OBJECTION: &str = r#"{"decision":"allow"}"#;
+
+/// "No" to Antigravity at PreToolUse; agy shows `reason` to the model.
+pub fn antigravity_deny(reason: &str) -> String {
+    serde_json::json!({"decision": "deny", "reason": reason}).to_string()
+}
+
+/// What Antigravity gets back when Marshmori doesn't decide: it wants a JSON object for every
+/// event, and at PreToolUse that object needs a decision.
+pub fn antigravity_no_decision(event_name: &str) -> String {
+    if event_name == "PreToolUse" { ANTIGRAVITY_NO_OBJECTION } else { "{}" }.to_string()
+}
+
+/// What the relay prints for the agent. `None` prints nothing, which Claude Code and
+/// Codex read as "no decision" and handle with their own prompt; Antigravity always gets
+/// an object (see `ANTIGRAVITY_NO_OBJECTION`).
 pub fn response_json(shape: Shape, decision: Option<Decision>) -> Option<String> {
     let allow = matches!(decision, Some(Decision::Allow) | Some(Decision::Always));
     let deny = decision == Some(Decision::Deny);
@@ -333,12 +351,12 @@ pub fn response_json(shape: Shape, decision: Option<Decision>) -> Option<String>
                 None
             }
         }
-        Shape::Antigravity => Some(if allow {
-            serde_json::json!({"decision": "allow"}).to_string()
-        } else if deny {
+        // Allowing and handing the call back ("let Antigravity ask") are the same answer:
+        // either way agy's own permission check comes next.
+        Shape::Antigravity => Some(if deny {
             serde_json::json!({"decision": "deny", "reason": DENY_MESSAGE}).to_string()
         } else {
-            "{}".to_string()
+            ANTIGRAVITY_NO_OBJECTION.to_string()
         }),
     }
 }
@@ -427,7 +445,13 @@ mod tests {
         assert_eq!(pre["hookSpecificOutput"]["permissionDecision"], "deny");
         assert!(response_json(Shape::PreToolUse, None).is_none(), "no answer: the IDE asks as usual (never 'ask')");
         assert_eq!(response_json(Shape::Antigravity, Some(Decision::Always)).unwrap(), r#"{"decision":"allow"}"#);
-        assert_eq!(response_json(Shape::Antigravity, None).unwrap(), "{}");
+        // agy reads `{}` at PreToolUse as a deny: no answer must not block the call.
+        assert_eq!(response_json(Shape::Antigravity, None).unwrap(), ANTIGRAVITY_NO_OBJECTION, "no answer: Antigravity asks as usual");
+        assert_eq!(response_json(Shape::Antigravity, Some(Decision::Terminal)).unwrap(), ANTIGRAVITY_NO_OBJECTION);
+        assert!(response_json(Shape::Antigravity, Some(Decision::Deny)).unwrap().contains(r#""decision":"deny""#));
+        assert_eq!(antigravity_no_decision("PreToolUse"), r#"{"decision":"allow"}"#);
+        assert_eq!(antigravity_no_decision("PostToolUse"), "{}");
+        assert_eq!(antigravity_no_decision("Stop"), "{}", "anything but \"continue\" lets it stop");
         assert_eq!(Shape::of(Agent::Claude, "PreToolUse"), Shape::PreToolUse);
         assert_eq!(Shape::of(Agent::Codex, "PermissionRequest"), Shape::PermissionRequest);
         assert_eq!(Shape::of(Agent::Antigravity, "PreToolUse"), Shape::Antigravity);

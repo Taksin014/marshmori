@@ -77,13 +77,19 @@ pub fn process(app: &AppHandle, ev: Event) -> Option<String> {
         .flatten();
     let asks_question = questions.is_some() && ev.name == "PreToolUse";
 
+    // A task Mamori runs with Antigravity: agy skips its own permission check there
+    // (tasks.rs), so the task's mode alone decides here what needs a card.
+    let task_gate = match (&ev.task, agent, ev.kind) {
+        (Some(task), Agent::Antigravity, Kind::ToolStart) if ev.name == "PreToolUse" => Some(antigravity_task_gate(app, task, &ev)),
+        _ => None,
+    };
+
     let needs_decision = match ev.kind {
         Kind::Permission if questions.is_some() => false,
         Kind::Permission => true,
+        _ if task_gate.is_some() => task_gate == Some(gate::TaskGate::Ask),
         Kind::ToolStart if agent == Agent::Antigravity && ev.name == "PreToolUse" => {
-            // A task Mamori runs always asks before a command: nobody is at a terminal.
-            let wanted = state.settings.lock().unwrap().antigravity_approvals || ev.task.is_some();
-            wanted && ev.tool.as_ref().map(|t| t.kind == ToolKind::Command).unwrap_or(false)
+            state.settings.lock().unwrap().antigravity_approvals && ev.tool.as_ref().map(|t| t.kind == ToolKind::Command).unwrap_or(false)
         }
         // Claude Code in an IDE's panel or in a background task: PermissionRequest never
         // comes, so ask here — when Claude Code would have asked (see gate.rs).
@@ -125,11 +131,31 @@ pub fn process(app: &AppHandle, ev: Event) -> Option<String> {
     if ev.kind == Kind::Permission && questions.is_some() {
         return state.approvals.recall_answer(ev.tool_use_id.as_deref()).map(|input| approvals::answer_permission_json(&input));
     }
+    if task_gate == Some(gate::TaskGate::Refuse) {
+        let what = ev.tool.as_ref().map(|t| t.summary.clone()).unwrap_or_default();
+        log(app, &ev, "approval", &format!("ไม่อนุญาต (งานนี้ให้วางแผนอย่างเดียว): {what}"));
+        return Some(approvals::antigravity_deny(PLAN_ONLY));
+    }
     if needs_decision {
         return permission(app, ev);
     }
-    // Antigravity wants a JSON object back for every event; `{}` is "no decision".
-    (agent == Agent::Antigravity).then(|| "{}".to_string())
+    // Antigravity wants a JSON object back for every event (at PreToolUse one with a
+    // decision: `{}` there is a deny).
+    (agent == Agent::Antigravity).then(|| approvals::antigravity_no_decision(&ev.name))
+}
+
+/// What agy reads when a plan-only task tries to change something.
+const PLAN_ONLY: &str = "This task only plans (Marshmori): look around and write the plan, without changing files or running commands.";
+
+/// The gate for one of an Antigravity task's tool calls (gate.rs), from the task's mode and
+/// folder. A task Marshmori doesn't know (any more) gets the strictest mode that still works.
+fn antigravity_task_gate(app: &AppHandle, task: &str, ev: &Event) -> gate::TaskGate {
+    let (mode, folder) = crate::tasks::gate_of(app, task).unwrap_or((crate::tasks::Mode::Ask, String::new()));
+    match &ev.tool {
+        Some(tool) => gate::antigravity_task_gate(mode, tool, &[folder.as_str()]),
+        None if mode == crate::tasks::Mode::Plan => gate::TaskGate::Refuse,
+        None => gate::TaskGate::Ask,
+    }
 }
 
 fn permission(app: &AppHandle, ev: Event) -> Option<String> {
@@ -369,5 +395,22 @@ mod tests {
         let ev = normalize(Agent::Antigravity, "PreToolUse", &json!({"conversationId":"c","toolCall":{"name":"run_command","args":{"CommandLine":"ls"}}}));
         assert_eq!(ev.tool.as_ref().unwrap().kind, crate::agents::ToolKind::Command);
         assert_eq!(response_json(Shape::Antigravity, Some(Decision::Deny)).unwrap(), r#"{"decision":"deny","reason":"The user denied this action in Marshmori."}"#);
+    }
+
+    #[test]
+    fn a_plan_only_antigravity_task_is_told_no_with_the_reason() {
+        let v: serde_json::Value = serde_json::from_str(&crate::approvals::antigravity_deny(super::PLAN_ONLY)).unwrap();
+        assert_eq!(v["decision"], "deny");
+        assert!(v["reason"].as_str().unwrap().contains("only plans"), "agy shows the reason to the model, so it writes the plan instead");
+    }
+
+    #[test]
+    fn antigravity_reads_go_through_without_a_card() {
+        // view_file needs no card, and its answer must still carry a decision: agy 1.3.5
+        // turned the old `{}` into "tool call denied by pre-tool hook".
+        let ev = normalize(Agent::Antigravity, "PreToolUse", &json!({"conversationId":"c","toolCall":{"name":"view_file","args":{"AbsolutePath":"C:/p/package.json"}}}));
+        assert_ne!(ev.tool.as_ref().unwrap().kind, crate::agents::ToolKind::Command);
+        let answer: serde_json::Value = serde_json::from_str(&crate::approvals::antigravity_no_decision(&ev.name)).unwrap();
+        assert_eq!(answer["decision"], "allow");
     }
 }

@@ -9,8 +9,10 @@
 // to answer in. A follow-up continues the same agent session.
 //
 // * The task text only ever travels on stdin, never on the command line.
-// * How much it may do on its own maps onto each agent's own permission modes;
-//   nothing here switches their safety checks off.
+// * How much it may do on its own maps onto each agent's own permission modes. The one
+//   exception is agy: in print mode its own check can't ask anyone and declines every
+//   command, so while Marshmori's hooks are connected it runs without that check and
+//   the island's card is the gate (gate.rs, by the task's mode). Never for a plan.
 // * What was asked and what came back are kept in tasks.json (not the files the agent
 //   touched), so the island can still show them after a restart. Quitting Marshmori
 //   stops tasks that are still running.
@@ -256,6 +258,8 @@ struct Saved {
 
 struct Job {
     cancelled: AtomicBool,
+    /// agy runs without its own permission check: Marshmori's hooks are the only gate.
+    skips_own_check: AtomicBool,
     pid: Mutex<Option<u32>>,
     /// Everything the run started (Windows: a job object; elsewhere its process group).
     group: Mutex<Option<Arc<crate::platform::KillGroup>>>,
@@ -263,7 +267,7 @@ struct Job {
 
 impl Job {
     fn new() -> Self {
-        Job { cancelled: AtomicBool::new(false), pid: Mutex::new(None), group: Mutex::new(None) }
+        Job { cancelled: AtomicBool::new(false), skips_own_check: AtomicBool::new(false), pid: Mutex::new(None), group: Mutex::new(None) }
     }
 
     /// Stops the run and everything it started.
@@ -353,6 +357,11 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
 /// How much a task may do on its own.
 pub fn mode_of(app: &AppHandle, id: &str) -> Option<Mode> {
     app.state::<AppState>().tasks.tasks.lock().unwrap().iter().find(|t| t.id == id).map(|t| t.mode)
+}
+
+/// A task's mode and folder, for gating its Antigravity tool calls.
+pub fn gate_of(app: &AppHandle, id: &str) -> Option<(Mode, String)> {
+    app.state::<AppState>().tasks.tasks.lock().unwrap().iter().find(|t| t.id == id).map(|t| (t.mode, t.cwd.clone()))
 }
 
 /// The folders Mamori may open for you: the ones tasks ran in.
@@ -580,6 +589,26 @@ pub fn dismiss(app: &AppHandle, id: &str) -> bool {
     removed
 }
 
+/// Antigravity's hooks were disconnected: a run without agy's own check has no gate left,
+/// so it stops. Returns how many did.
+pub fn stop_ungated(app: &AppHandle) -> usize {
+    let state = app.state::<AppState>();
+    let running: Vec<String> = {
+        let tasks = state.tasks.tasks.lock().unwrap();
+        tasks.iter().filter(|t| t.status == Status::Running && t.agent == Provider::Antigravity.id()).map(|t| t.id.clone()).collect()
+    };
+    let hit: Vec<(String, Arc<Job>)> = {
+        let jobs = state.tasks.jobs.lock().unwrap();
+        running.into_iter().filter_map(|id| jobs.get(&id).filter(|j| j.skips_own_check.load(Ordering::Relaxed)).cloned().map(|j| (id, j))).collect()
+    };
+    for (id, job) in &hit {
+        log::line(format!("task {id}: stopped, Antigravity hooks disconnected"));
+        update(app, id, |t| t.activity = "หยุดแล้ว: ตัดการเชื่อม hooks ของ Antigravity".into());
+        job.stop();
+    }
+    hit.len()
+}
+
 /// Quitting: whatever still runs is stopped (and saved as stopped).
 pub fn stop_all(app: &AppHandle) {
     let state = app.state::<AppState>();
@@ -659,6 +688,23 @@ fn fallback<'a>(p: Provider, mode: Mode, resume: Resume<'a>, said: &str) -> Opti
         return Some((mode, Resume::New, "ต่อจากงานล่าสุดไม่ได้ เลยเริ่มงานใหม่แทน"));
     }
     None
+}
+
+/// agy's option for running without its own permission check (see the top of this file).
+const AGY_SKIP_OWN_CHECK: &str = "--dangerously-skip-permissions";
+
+/// agy goes without its own check only where Marshmori's hook can be the gate, and never
+/// for a plan (there agy declining every command is what we want).
+fn agy_skips_own_check(mode: Mode, hooks_gate: bool) -> bool {
+    hooks_gate && mode != Mode::Plan
+}
+
+/// Marshmori's Antigravity hooks are connected, point at the relay and weren't taken off:
+/// every tool call reaches the island before it runs.
+fn antigravity_hooks_gate(app: &AppHandle) -> bool {
+    let off = app.state::<AppState>().settings.lock().unwrap().hooks_off.iter().any(|a| a == "antigravity");
+    let st = crate::installer::status(agents::Agent::Antigravity);
+    !off && st.installed && st.up_to_date && st.relay_ready && st.error.is_none()
 }
 
 /// The agent's own permission settings for `mode`, then its output options, and a
@@ -756,7 +802,12 @@ fn stdin_for(p: Provider, prompt: &str, mode: Mode) -> Vec<u8> {
 
 #[allow(clippy::too_many_arguments)]
 fn run(app: &AppHandle, id: &str, p: Provider, program: &Path, cwd: &Path, prompt: &str, mode: Mode, resume: Resume, dirs: &[String], job: &Arc<Job>) -> Outcome {
-    let args = args_for(p, mode, resume, dirs);
+    let mut args = args_for(p, mode, resume, dirs);
+    let skips = p == Provider::Antigravity && agy_skips_own_check(mode, antigravity_hooks_gate(app));
+    job.skips_own_check.store(skips, Ordering::Relaxed);
+    if skips {
+        args.push(AGY_SKIP_OWN_CHECK.into());
+    }
     let group = Arc::new(crate::platform::KillGroup::new());
     let mut child = match chat::quiet_command(program)
         .args(&args)
@@ -879,6 +930,9 @@ fn run(app: &AppHandle, id: &str, p: Provider, program: &Path, cwd: &Path, promp
         let mut text = if answer.is_empty() { "เสร็จแล้ว (ไม่มีข้อความตอบกลับ)".to_string() } else { answer };
         if stream.denials > 0 {
             text.push_str(&format!("\n\n*(มีขั้นตอนที่ไม่ได้รับอนุญาต {} ครั้ง)*", stream.denials));
+        }
+        if stream.own_check_declined && mode != Mode::Plan {
+            text.push_str("\n\n*(Antigravity ไม่ยอมรันคำสั่งเอง เพราะงานเบื้องหลังไม่มีใครตอบได้ — เชื่อม hooks ของ Antigravity ที่ ตั้งค่า › เชื่อมต่อ agent แล้วคำสั่งจะมาขออนุมัติที่ Mamori)*");
         }
         return Outcome::Done(text);
     }
@@ -1023,6 +1077,8 @@ pub(crate) struct Stream {
     /// Gemini: the last thing seen was a tool call (the next text starts a new message).
     after_tool: bool,
     pub denials: usize,
+    /// agy: its own permission check declined a step (nobody can answer it in print mode).
+    pub own_check_declined: bool,
 }
 
 impl Stream {
@@ -1039,6 +1095,7 @@ impl Stream {
             items: HashMap::new(),
             after_tool: false,
             denials: 0,
+            own_check_declined: false,
         }
     }
 
@@ -1220,6 +1277,10 @@ impl Stream {
             Some("init") => self.doing("เริ่มทำงาน".into()),
             Some("step_update") => {
                 let s = &v["step_update"];
+                let failed = s["tool_info"]["error"]["message"].as_str().unwrap_or("");
+                if failed.contains("permission check failed") {
+                    self.own_check_declined = true;
+                }
                 let kind = s["step_type"].as_str().unwrap_or("");
                 if kind.is_empty() || kind == "agent_response" {
                     if let Some(t) = s["text_delta"].as_str() {
@@ -1503,6 +1564,28 @@ mod tests {
         );
         assert_eq!(s.session.as_deref(), Some("c-7"));
         assert_eq!(s.answer(), "ทำเสร็จแล้ว");
+    }
+
+    #[test]
+    fn agy_skips_its_own_check_only_where_marshmori_is_the_gate() {
+        for mode in [Mode::Ask, Mode::Edits, Mode::Auto] {
+            assert!(agy_skips_own_check(mode, true), "{mode:?}: the island's card is the gate");
+            assert!(!agy_skips_own_check(mode, false), "{mode:?}: no hooks, agy keeps its own check");
+        }
+        assert!(!agy_skips_own_check(Mode::Plan, true), "a plan never runs without agy's check");
+        // The flag isn't part of the plain arguments: run() adds it only after checking the hooks.
+        for mode in [Mode::Ask, Mode::Edits, Mode::Auto, Mode::Plan] {
+            assert!(!args_for(Provider::Antigravity, mode, Resume::New, &[]).iter().any(|a| a == AGY_SKIP_OWN_CHECK));
+        }
+    }
+
+    #[test]
+    fn agy_declining_on_its_own_is_noticed() {
+        // As agy 1.3.5 prints it in print mode, without --dangerously-skip-permissions.
+        let declined = r#"{"event":"step_update","step_update":{"conversation_id":"e6","step_index":5,"state":"ERROR","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo probe"},"error":{"type":"TOOL_ERROR","message":"permission check failed for command \"echo probe\": user denied permission to run command:\necho probe"}}}}"#;
+        assert!(feed_all(Provider::Antigravity, &[declined]).own_check_declined);
+        let fine = r#"{"event":"step_update","step_update":{"step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"ls"}}}}"#;
+        assert!(!feed_all(Provider::Antigravity, &[fine]).own_check_declined);
     }
 
     #[test]

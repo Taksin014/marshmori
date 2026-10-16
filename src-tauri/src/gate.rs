@@ -10,12 +10,16 @@
 //
 // The guess errs safely both ways: one card too many is one more click; one too few
 // and the IDE shows its own prompt, exactly as it did before Marshmori.
+//
+// Antigravity tasks are the exception: there agy skips its own check (tasks.rs), so
+// `antigravity_task_gate` is the only gate, and when unsure it asks.
 
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::agents::{Agent, Event};
+use crate::agents::{Agent, Event, Tool, ToolKind};
+use crate::tasks::Mode;
 
 /// Claude Code front ends whose own permission prompt doesn't fire PermissionRequest.
 pub fn is_ide(entry: &str) -> bool {
@@ -548,6 +552,65 @@ pub fn claude_would_ask(ev: &Event, rules: &Rules) -> bool {
     }
 }
 
+// ── Antigravity tasks ───────────────────────────────────────────────────────────
+
+/// What Marshmori does with an Antigravity tool call in a task Mamori runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskGate {
+    /// No card: Marshmori has no objection.
+    Pass,
+    /// A card on the island; no answer is a no.
+    Ask,
+    /// Refused without a card (a plan-only task changing something).
+    Refuse,
+}
+
+/// agy can't ask anyone in print mode, so a task runs it without its own permission
+/// check (tasks.rs) and this alone decides, by the task's mode. `roots` are the folders
+/// the task may edit in on its own. Reads, searches and the web never ask.
+pub fn antigravity_task_gate(mode: Mode, tool: &Tool, roots: &[&str]) -> TaskGate {
+    // agy runs these tasks without its own check, so this fails closed: only what just
+    // looks around goes through by itself. Driving the browser (running script in a page,
+    // clicking) and any tool agy adds later get a card, or a no in a plan. Reading the web
+    // asks in "ถามก่อน", as WebFetch/WebSearch do in Claude Code.
+    let drives_browser = tool.name.to_ascii_lowercase().contains("browser");
+    match tool.kind {
+        ToolKind::Read | ToolKind::Search | ToolKind::Plan | ToolKind::Agent => return TaskGate::Pass,
+        ToolKind::Web if !drives_browser && mode != Mode::Ask => return TaskGate::Pass,
+        _ => {}
+    }
+    let in_roots = || tool.target.as_deref().map(|f| edit_inside(f, roots)).unwrap_or(false);
+    let looks_only = || tool.name == "run_command" && tool.target.as_deref().map(agy_read_only).unwrap_or(false);
+    match (mode, tool.kind) {
+        (Mode::Plan, _) => TaskGate::Refuse,
+        (Mode::Ask, _) | (_, ToolKind::Mcp) => TaskGate::Ask,
+        (Mode::Edits | Mode::Auto, ToolKind::Edit) if in_roots() => TaskGate::Pass,
+        (Mode::Auto, ToolKind::Command) if looks_only() => TaskGate::Pass,
+        _ => TaskGate::Ask,
+    }
+}
+
+/// A file inside one of the folders (no `..` way out of them).
+fn edit_inside(file: &str, roots: &[&str]) -> bool {
+    let climbs = file.split(['/', '\\']).any(|part| part == "..");
+    !climbs && is_absolute(file) && !roots.iter().all(|r| r.trim().is_empty()) && inside(file, roots)
+}
+
+/// A command (agy runs PowerShell on Windows) that only looks around. On top of what
+/// Claude Code counts as read-only: PowerShell runs whatever is in `( )`, `{ }`, `@( )` and
+/// `[ ]::` even after a harmless cmdlet (`echo (rm x)`, `Select-Object @{e={…}}`); a few
+/// options of "read-only" programs write files or start others (`git log --output`,
+/// `--exec-path`, `git grep -O`); and the relay cuts very long strings short (ending in
+/// `…`), hiding the rest of the line.
+fn agy_read_only(command: &str) -> bool {
+    let inner = command.chars().any(|c| matches!(c, '(' | ')' | '{' | '}' | '@' | '[' | ']' | '…'));
+    let writes_or_runs = words(command).iter().any(|w| {
+        let w = w.to_ascii_lowercase();
+        w == "-o" || ["--output", "--exec-path", "--open-files-in-pager", "--ext-diff"].iter().any(|o| w.starts_with(o))
+    });
+    !command.trim().is_empty() && !inner && !writes_or_runs && !shell_would_ask("run_command", command, "default", &Rules::default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -644,5 +707,79 @@ mod tests {
         assert!(wild("* --version", "node --version"));
         assert_eq!(segments("a && b || c; d | e & f"), vec!["a", "b", "c", "d", "e & f"]);
         assert_eq!(segments("echo 'a && b'"), vec!["echo 'a && b'"]);
+    }
+
+    fn agy(mode: Mode, name: &str, args: Value) -> TaskGate {
+        antigravity_task_gate(mode, &crate::agents::describe(name, &args), &["C:\\Work\\Shop"])
+    }
+
+    #[test]
+    fn antigravity_tasks_ask_by_their_mode() {
+        let cmd = |c: &str| json!({ "CommandLine": c });
+        let file = |f: &str| json!({ "TargetFile": f });
+        for mode in [Mode::Ask, Mode::Edits, Mode::Auto, Mode::Plan] {
+            assert_eq!(agy(mode, "view_file", json!({"AbsolutePath": "C:\\Windows\\win.ini"})), TaskGate::Pass, "reads never ask");
+            assert_eq!(agy(mode, "grep_search", json!({"Query": "TODO"})), TaskGate::Pass);
+        }
+        // Reading the web: asks in "ถามก่อน" only. Driving the browser and unknown tools never
+        // go through by themselves (agy's own check is off in these tasks).
+        assert_eq!(agy(Mode::Ask, "search_web", json!({"query": "rust"})), TaskGate::Ask);
+        assert_eq!(agy(Mode::Ask, "read_url_content", json!({"Url": "https://example.com"})), TaskGate::Ask);
+        for mode in [Mode::Edits, Mode::Auto, Mode::Plan] {
+            assert_eq!(agy(mode, "search_web", json!({"query": "rust"})), TaskGate::Pass, "{mode:?}");
+        }
+        for name in ["execute_browser_javascript", "click_browser_pixel", "browser_subagent", "some_tool_agy_adds_later"] {
+            for mode in [Mode::Ask, Mode::Edits, Mode::Auto] {
+                assert_eq!(agy(mode, name, json!({})), TaskGate::Ask, "{name} in {mode:?}");
+            }
+            assert_eq!(agy(Mode::Plan, name, json!({})), TaskGate::Refuse, "{name} in a plan");
+        }
+        // Ask: everything that changes something or runs.
+        assert_eq!(agy(Mode::Ask, "run_command", cmd("ls")), TaskGate::Ask);
+        assert_eq!(agy(Mode::Ask, "write_to_file", file("C:\\Work\\Shop\\a.txt")), TaskGate::Ask);
+        assert_eq!(agy(Mode::Ask, "call_mcp_tool", json!({"ServerName": "db", "ToolName": "drop"})), TaskGate::Ask);
+        // Edits: edits in the folder go through, every command still asks.
+        assert_eq!(agy(Mode::Edits, "replace_file_content", file("c:/work/shop/src/a.ts")), TaskGate::Pass);
+        assert_eq!(agy(Mode::Edits, "sed_file", file("C:\\Work\\Shop\\src\\a.ts")), TaskGate::Pass);
+        assert_eq!(agy(Mode::Edits, "write_to_file", file("C:\\Users\\me\\.ssh\\config")), TaskGate::Ask, "outside the folder");
+        assert_eq!(agy(Mode::Edits, "write_to_file", file("C:\\Work\\Shop\\..\\Other\\a.txt")), TaskGate::Ask, "climbs out");
+        assert_eq!(agy(Mode::Edits, "write_to_file", file("C:\\Work\\Shopping\\a.txt")), TaskGate::Ask, "a sibling with the same start");
+        assert_eq!(agy(Mode::Edits, "write_to_file", json!({})), TaskGate::Ask, "no path: can't tell where");
+        assert_eq!(agy(Mode::Edits, "run_command", cmd("Get-ChildItem -Force")), TaskGate::Ask);
+        assert_eq!(agy(Mode::Edits, "call_mcp_tool", json!({})), TaskGate::Ask);
+        // Plan: nothing that changes something, and no card for it.
+        assert_eq!(agy(Mode::Plan, "run_command", cmd("ls")), TaskGate::Refuse);
+        assert_eq!(agy(Mode::Plan, "write_to_file", file("C:\\Work\\Shop\\plan.md")), TaskGate::Refuse);
+        assert_eq!(agy(Mode::Plan, "call_mcp_tool", json!({})), TaskGate::Refuse);
+    }
+
+    #[test]
+    fn antigravity_auto_runs_only_commands_that_look() {
+        let run = |c: &str| agy(Mode::Auto, "run_command", json!({ "CommandLine": c }));
+        for c in ["Get-ChildItem -Force", "ls", "git status", "git log --oneline -5", "cat package.json | Select-String react", "Get-Content a.txt 2>$null"] {
+            assert_eq!(run(c), TaskGate::Pass, "{c}");
+        }
+        for c in [
+            "npm test",
+            "Remove-Item -Recurse build",
+            "echo hi > a.txt",
+            "Get-ChildItem | Remove-Item",
+            "echo (Remove-Item a.txt)",
+            "Select-Object @{n='x';e={Remove-Item a}}",
+            "Sort-Object { rm x }",
+            "[IO.File]::Delete('a.txt')",
+            "echo $(rm x)",
+            "git log --output=C:\\x.txt",
+            "git --exec-path=C:\\evil status",
+            "git grep -O TODO",
+            "ls aaaa…",
+            "cmd /c dir",
+            "",
+        ] {
+            assert_eq!(run(c), TaskGate::Ask, "{c}");
+        }
+        assert_eq!(agy(Mode::Auto, "send_command_input", json!({"Input": "y"})), TaskGate::Ask, "typing into a running command");
+        assert_eq!(agy(Mode::Auto, "write_to_file", json!({"TargetFile": "C:\\Work\\Shop\\a.txt"})), TaskGate::Pass);
+        assert_eq!(agy(Mode::Auto, "write_to_file", json!({"TargetFile": "D:\\a.txt"})), TaskGate::Ask);
     }
 }

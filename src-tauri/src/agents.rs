@@ -425,6 +425,12 @@ pub fn describe(name: &str, input: &Value) -> Tool {
             let detail = cmd.as_deref().map(|c| clip_lines(c, 14, 1200));
             tool(ToolKind::Command, summary, cmd, detail)
         }
+        // Antigravity: typing into a command it started, running a notebook.
+        "send_command_input" | "notebook_execution" => {
+            let summary = if lname == "notebook_execution" { "รันโน้ตบุ๊ก" } else { "พิมพ์ใส่คำสั่งที่รันอยู่" };
+            let what = field(input, &["Input", "input", "Text", "text"]);
+            tool(ToolKind::Command, summary.to_string(), None, what.map(|w| clip_lines(&w, 14, 1200)))
+        }
         "apply_patch" => {
             let patch = field(input, &["command", "patch", "input"]).unwrap_or_default();
             let files = patch_files(&patch);
@@ -437,8 +443,8 @@ pub fn describe(name: &str, input: &Value) -> Tool {
             tool(ToolKind::Edit, summary, target, (!patch.is_empty()).then(|| clip_lines(&patch, 24, 1600)))
         }
         "edit" | "multiedit" | "str_replace_based_edit_tool" | "str_replace_editor" | "replace_file_content"
-        | "multi_replace_file_content" | "edit_file" | "replace" => {
-            let path = field(input, &["file_path", "path", "TargetFile", "target_file", "filePath"]);
+        | "multi_replace_file_content" | "edit_file" | "replace" | "sed_file" => {
+            let path = field(input, &["file_path", "path", "TargetFile", "target_file", "filePath", "File", "AbsolutePath"]);
             let old = field(input, &["old_string", "TargetContent", "old_str"]);
             let new = field(input, &["new_string", "ReplacementContent", "new_str"]);
             let detail = match (&old, &new) {
@@ -456,8 +462,8 @@ pub fn describe(name: &str, input: &Value) -> Tool {
             let summary = path.as_deref().map(|p| format!("แก้ไข {}", basename(p))).unwrap_or_else(|| "แก้ไขไฟล์".into());
             tool(ToolKind::Edit, summary, path, detail)
         }
-        "write" | "write_to_file" | "create" | "create_file" | "notebookedit" | "write_file" => {
-            let path = field(input, &["file_path", "path", "TargetFile", "notebook_path", "filePath"]);
+        "write" | "write_to_file" | "create" | "create_file" | "notebookedit" | "notebook_edit" | "write_file" => {
+            let path = field(input, &["file_path", "path", "TargetFile", "notebook_path", "filePath", "File", "AbsolutePath"]);
             let content = field(input, &["content", "CodeContent", "file_text", "new_source"]);
             let summary = path.as_deref().map(|p| format!("เขียน {}", basename(p))).unwrap_or_else(|| "เขียนไฟล์".into());
             tool(ToolKind::Edit, summary, path, content.map(|c| clip_lines(&c, 16, 1200)))
@@ -515,7 +521,7 @@ pub fn describe(name: &str, input: &Value) -> Tool {
             };
             tool(ToolKind::Mcp, summary, None, Some(clip_lines(&input.to_string(), 12, 900)))
         }
-        _ if lname.starts_with("browser") => tool(ToolKind::Web, "ใช้เบราว์เซอร์".into(), None, None),
+        _ if lname.contains("browser") => tool(ToolKind::Web, "ใช้เบราว์เซอร์".into(), None, None),
         _ => {
             let detail = (!input.is_null()).then(|| clip_lines(&input.to_string(), 10, 700));
             tool(ToolKind::Other, format!("ใช้ {}", short(name, 30)), None, detail)
@@ -573,6 +579,23 @@ mod tests {
         let ev = normalize(Agent::Antigravity, "PostToolUse", &json!({"conversationId":"c9","toolCall":{"name":"view_file","args":{"AbsolutePath":"/a/b/readme.md"}}}));
         assert_eq!(ev.kind, Kind::ToolEnd);
         assert_eq!(ev.tool.unwrap().summary, "อ่าน readme.md");
+    }
+
+    #[test]
+    fn antigravity_tools_that_change_things_are_not_other() {
+        // agy 1.3.5's own tool list: these edit files or run something, so a task's gate must see them.
+        for name in ["sed_file", "notebook_edit", "write_to_file", "replace_file_content", "multi_replace_file_content"] {
+            assert_eq!(describe(name, &json!({"TargetFile":"C:/p/a.txt"})).kind, ToolKind::Edit, "{name}");
+        }
+        assert_eq!(describe("sed_file", &json!({"TargetFile":"C:/p/a.txt"})).target.as_deref(), Some("C:/p/a.txt"));
+        for name in ["run_command", "send_command_input", "notebook_execution"] {
+            assert_eq!(describe(name, &json!({"CommandLine":"npm test"})).kind, ToolKind::Command, "{name}");
+        }
+        assert_eq!(describe("send_command_input", &json!({"Input":"y"})).target, None, "not a command line of its own");
+        for name in ["execute_browser_javascript", "click_browser_pixel", "browser_subagent", "open_browser_url"] {
+            assert_eq!(describe(name, &json!({})).kind, ToolKind::Web, "{name}");
+        }
+        assert_eq!(describe("call_mcp_tool", &json!({"ServerName":"db","ToolName":"query"})).kind, ToolKind::Mcp);
     }
 
     #[test]

@@ -5,8 +5,9 @@
 //! which Marshmori rewrites every time it starts.
 //!
 //! The one rule: never get in the agent's way.
-//! * Marshmori is not running → exit 0 at once with no output (Antigravity gets `{}`),
-//!   and the agent carries on as if nothing was installed.
+//! * Marshmori is not running → exit 0 at once with no output (Antigravity gets `{}`, and
+//!   "allow" at PreToolUse, see `no_decision`), and the agent carries on as if nothing
+//!   was installed.
 //! * Started by Marshmori's own chat (MARSHMORI_INTERNAL is set) → the same, so the
 //!   side chat never reports on itself.
 //! * Every step runs under a deadline, so a stuck app cannot wedge a session.
@@ -167,11 +168,22 @@ impl Origin {
     }
 }
 
+/// What the agent gets when we have nothing to say. Claude Code and Codex: nothing at all.
+/// Antigravity wants a JSON object for every event, and at PreToolUse one without a
+/// decision is a deny (agy 1.3.5), so there it's "allow": no objection. agy still runs its
+/// own permission check afterwards. Must match `approvals::antigravity_no_decision`.
+fn no_decision(agent: &str, event: &str) -> Option<&'static str> {
+    match (agent, event) {
+        ("antigravity", "PreToolUse") => Some(r#"{"decision":"allow"}"#),
+        ("antigravity", _) => Some("{}"),
+        _ => None,
+    }
+}
+
 fn main() {
     let args = parse_args(std::env::args().skip(1));
     let agent = if args.agent.is_empty() { "claude".to_string() } else { args.agent };
-    // Antigravity expects a JSON object on stdout; `{}` means "no decision".
-    let fallback = (agent == "antigravity").then_some("{}");
+    let fallback = no_decision(&agent, &args.event);
 
     // Marshmori's own side chat runs these agents' CLIs. Their hooks fire there too,
     // and must not report back to Marshmori (the chat would show up as a session, or
@@ -183,7 +195,10 @@ fn main() {
 
     let task = std::env::var("MARSHMORI_TASK").ok().map(|t| clean(&t)).filter(|t| !t.is_empty());
     let origin = Origin::from_env(&agent);
-    let Some((body, event)) = read_payload(&args.event, task.clone(), &origin) else { finish(None, fallback) };
+    let Some((body, event)) = read_payload(&args.event, task.clone(), &origin) else {
+        finish(unreadable_answer(&agent, &args.event, task.is_some()), fallback)
+    };
+    let fallback = no_decision(&agent, &event);
     let question = agent == "claude" && event == "PreToolUse" && is_question(&body);
     let waits = waits_for_answer(&agent, &event, origin.ide(), task.is_some(), question);
     // A task Mamori runs in the background has no terminal to ask in: when Marshmori
@@ -204,6 +219,14 @@ fn main() {
     });
     let answer = rx.recv_timeout(budget).ok().flatten();
     finish(answer.or(no_answer), fallback)
+}
+
+/// A call we couldn't even read. In a task Mamori runs, agy skips its own permission check
+/// (`--dangerously-skip-permissions`, Marshmori's hook is the gate), so such a call must not
+/// go through on "no objection": it's a no. Everywhere else the agent's own check still
+/// stands, and we stay out of the way as usual.
+fn unreadable_answer(agent: &str, event: &str, task: bool) -> Option<String> {
+    (task && agent == "antigravity" && event == "PreToolUse").then(|| deny_json(agent))
 }
 
 /// "No" in the agent's own words.
@@ -452,6 +475,27 @@ mod tests {
         bom.extend_from_slice(br#"{"hook_event_name":"Stop"}"#);
         assert_eq!(prepare_payload(&bom, "", None, None, &origin()).unwrap().1, "Stop");
         assert!(prepare_payload(b"{}", "", None, None, &origin()).is_none());
+    }
+
+    #[test]
+    fn antigravity_is_never_blocked_by_a_missing_answer() {
+        // agy reads `{}` at PreToolUse as "tool call denied by pre-tool hook".
+        let pre: Value = serde_json::from_str(no_decision("antigravity", "PreToolUse").unwrap()).unwrap();
+        assert_eq!(pre["decision"], "allow");
+        assert_eq!(no_decision("antigravity", "PostToolUse"), Some("{}"));
+        assert_eq!(no_decision("antigravity", "Stop"), Some("{}"));
+        assert_eq!(no_decision("claude", "PreToolUse"), None, "Claude Code asks as usual when we print nothing");
+        assert_eq!(no_decision("codex", "PermissionRequest"), None);
+    }
+
+    #[test]
+    fn an_unreadable_call_in_an_antigravity_task_is_a_no() {
+        // Inside a task agy runs without its own check: a call we can't read can't pass.
+        let v: Value = serde_json::from_str(&unreadable_answer("antigravity", "PreToolUse", true).unwrap()).unwrap();
+        assert_eq!(v["decision"], "deny");
+        assert!(unreadable_answer("antigravity", "PreToolUse", false).is_none(), "outside a task agy's own check still runs");
+        assert!(unreadable_answer("antigravity", "PostToolUse", true).is_none());
+        assert!(unreadable_answer("claude", "PreToolUse", true).is_none(), "Claude Code keeps its own check in a task");
     }
 
     #[test]
