@@ -2074,7 +2074,7 @@ dependencies = [
 
 [[package]]
 name = "marshmori"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -2091,7 +2091,7 @@ dependencies = [
 
 [[package]]
 name = "marshmori-hook"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "serde_json",
 ]
