@@ -1,6 +1,6 @@
 ﻿# Builds Marshmori from this folder and installs it, in one go.
 # For developers: started by scripts\build-from-source.cmd (double-click it). Run it again
-# to update. Everyone else installs with "ติดตั้ง Marshmori.exe" instead.
+# to update. Everyone else installs from https://taksin014.github.io/marshmori/ instead.
 #
 #  1. checks that Node.js and Rust are there (and says where to get them if not)
 #  2. npm install, then builds the app and its installer (npm run tauri build)
