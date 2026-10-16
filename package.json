@@ -2,7 +2,7 @@
   "name": "marshmori",
   "private": true,
   "license": "UNLICENSED",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "module",
   "description": "Marshmori (Mamori) — a tiny marshmallow sprout at the top of your Windows screen that watches Claude Code, Codex and Antigravity, and stretches its neck to your mouse when they need you.",
   "scripts": {
