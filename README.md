@@ -90,14 +90,15 @@ cargo -V
 ## รันแบบนักพัฒนา
 
 ```powershell
-cd C:\โปรเจ็ค\aimoji
+git clone https://github.com/Taksin014/marshmori.git
+cd marshmori
 npm install
 npm run tauri dev
 ```
 
 - ครั้งแรกจะคอมไพล์ Rust นานราว 3–8 นาที ครั้งต่อไปจะเร็วขึ้นมาก
 - `npm run tauri dev` สร้างตัวส่งต่อ `marshmori-hook.exe` ให้อัตโนมัติก่อนเปิดแอป
-- จะเปลี่ยนชื่อโฟลเดอร์เป็น `marshmori` ก็ได้ (ปิดแอปก่อน) ไม่มีอะไรผูกกับชื่อโฟลเดอร์
+- ตั้งชื่อโฟลเดอร์อะไรก็ได้ ไม่มีอะไรผูกกับชื่อโฟลเดอร์
 - ถ้าเจอปัญหาเรื่อง path ภาษาไทย ให้ย้ายโฟลเดอร์ไปไว้ที่ path ภาษาอังกฤษ เช่น `C:\dev\marshmori`
 
 ## สร้างตัวติดตั้ง (.exe) เอง

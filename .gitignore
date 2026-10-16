@@ -61,4 +61,5 @@ coverage/
 .DS_Store
 Thumbs.db
 desktop.ini
-.claude/settings.local.json
+# Claude Code's local settings and preview config (per machine, not part of Marshmori)
+.claude/
