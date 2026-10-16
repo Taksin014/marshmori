@@ -1,11 +1,13 @@
 ; Marshmori's installer: Tauri's own NSIS template (tauri-cli v2.12.1,
-; crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi) with a one-click install.
-; Opened by double-click it shows one page with one button, "ติดตั้ง"; pressing it installs
-; (over an older or the same version, as an update does: the agents' hooks and the settings
-; stay as they are), closes Marshmori if it is open, makes the Start Menu and desktop
-; shortcuts, and opens Marshmori when done. Passive (/P), silent (/S) and update (/UPDATE)
-; runs behave exactly as in Tauri's template. Everything changed is marked "; Marshmori:" —
-; when the Tauri CLI is upgraded, take its new template and apply these again.
+; crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi) that installs on opening.
+; Opened by double-click it asks nothing: a progress bar runs (installing over an older or
+; the same version, as an update does: the agents' hooks and the settings stay as they
+; are), Marshmori is closed if it is open, the Start Menu and desktop shortcuts are made,
+; and Marshmori opens when done. The "ติดตั้ง Marshmori" button on the download page was
+; the go-ahead. Only installing an older version over a newer one still asks. Passive (/P),
+; silent (/S) and update (/UPDATE) runs behave exactly as in Tauri's template. Everything
+; changed is marked "; Marshmori:" — when the Tauri CLI is upgraded, take its new template
+; and apply these again.
 
 Unicode true
 ManifestDPIAware true
@@ -84,10 +86,8 @@ Var PassiveMode
 Var UpdateMode
 Var NoShortcutMode
 Var WixMode
-; Marshmori: a plain double-click (not /P, /S or /UPDATE) is the one-click install.
+; Marshmori: a plain double-click (not /P, /S or /UPDATE) installs right away.
 Var OneClick
-Var WelcomeTitle
-Var WelcomeNote
 Var OldMainBinaryName
 
 Name "${PRODUCTNAME}"
@@ -180,43 +180,11 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 
 ; Installer pages, must be ordered as they appear
 ; 1. Welcome Page
-; Marshmori: the one page of the one-click install, its button reads "ติดตั้ง".
-!define MUI_WELCOMEPAGE_TITLE "$WelcomeTitle"
-!define MUI_WELCOMEPAGE_TEXT "$WelcomeNote"
-!define MUI_PAGE_CUSTOMFUNCTION_PRE OneClickWelcomePre
-!define MUI_PAGE_CUSTOMFUNCTION_SHOW OneClickWelcomeShow
+; Marshmori: none when opened by double-click: it goes straight to installing.
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassiveOrOneClick
 !insertmacro MUI_PAGE_WELCOME
 
-; Marshmori: what the page says, for a first install or an update.
-Function OneClickWelcomePre
-  ${IfThen} $PassiveMode = 1 ${|} Abort ${|}
-  ReadRegStr $0 SHCTX "${UNINSTKEY}" "DisplayVersion"
-  ${If} $0 == ""
-    StrCpy $WelcomeTitle "$(oneClickTitle)"
-    StrCpy $WelcomeNote "$(oneClickText)"
-  ${Else}
-    nsis_tauri_utils::SemverCompare "${VERSION}" $0
-    Pop $1
-    ${If} $1 = 0
-      StrCpy $WelcomeTitle "$(oneClickAgainTitle)"
-      StrCpy $WelcomeNote "$(oneClickAgainText)"
-    ${ElseIf} $1 = -1
-      StrCpy $WelcomeTitle "$(oneClickTitle)"
-      StrCpy $WelcomeNote "$(oneClickOlderText)"
-    ${Else}
-      StrCpy $WelcomeTitle "$(oneClickUpdateTitle)"
-      StrCpy $WelcomeNote "$(oneClickUpdateText)"
-    ${EndIf}
-  ${EndIf}
-FunctionEnd
-
-; Marshmori: the button that moves on is the whole install.
-Function OneClickWelcomeShow
-  GetDlgItem $0 $HWNDPARENT 1
-  SendMessage $0 ${WM_SETTEXT} 0 "STR:$(oneClickButton)"
-FunctionEnd
-
-; Marshmori: the pages after the button are skipped in a one-click install.
+; Marshmori: the pages a double-click install doesn't show.
 Function SkipIfPassiveOrOneClick
   ${IfThen} $PassiveMode = 1 ${|} Abort ${|}
   ${IfThen} $OneClick = 1 ${|} Abort ${|}
@@ -537,28 +505,6 @@ FunctionEnd
 {{#each language_files}}
   !include "{{this}}"
 {{/each}}
-
-; Marshmori: the one-click page's words.
-!ifdef LANG_THAI
-  LangString oneClickTitle ${LANG_THAI} "ติดตั้ง ${PRODUCTNAME}"
-  LangString oneClickText ${LANG_THAI} "Mamori มาร์ชแมลโลว์ตัวน้อยที่อยู่ขอบบนจอ คอยดู Claude Code, Codex และ Antigravity ให้คุณ$\r$\n$\r$\nกด ติดตั้ง แล้วรอสักครู่ เสร็จแล้ว ${PRODUCTNAME} จะเปิดขึ้นมาเอง$\r$\n$\r$\nติดตั้งให้ผู้ใช้คนนี้ ไม่ต้องใช้สิทธิ์ผู้ดูแลเครื่อง พร้อมไอคอนบนเดสก์ท็อปและใน Start Menu"
-  LangString oneClickUpdateTitle ${LANG_THAI} "อัปเดต ${PRODUCTNAME}"
-  LangString oneClickUpdateText ${LANG_THAI} "ในเครื่องมี ${PRODUCTNAME} $0 อยู่แล้ว$\r$\n$\r$\nกด ติดตั้ง เพื่ออัปเดตเป็น ${VERSION} การตั้งค่าและการเชื่อมต่อ agent อยู่ครบ ไม่ต้องตั้งใหม่$\r$\n$\r$\nถ้า ${PRODUCTNAME} เปิดอยู่ จะปิดให้ระหว่างติดตั้ง แล้วเปิดขึ้นมาใหม่เมื่อเสร็จ"
-  LangString oneClickAgainTitle ${LANG_THAI} "ติดตั้ง ${PRODUCTNAME} ซ้ำ"
-  LangString oneClickAgainText ${LANG_THAI} "ในเครื่องมี ${PRODUCTNAME} ${VERSION} เวอร์ชันนี้อยู่แล้ว$\r$\n$\r$\nกด ติดตั้ง เพื่อติดตั้งทับอีกครั้ง (เช่น ถ้าไฟล์ของโปรแกรมเสีย) การตั้งค่าและการเชื่อมต่อ agent อยู่ครบ$\r$\n$\r$\nถ้า ${PRODUCTNAME} เปิดอยู่ จะปิดให้ระหว่างติดตั้ง แล้วเปิดขึ้นมาใหม่เมื่อเสร็จ"
-  LangString oneClickOlderText ${LANG_THAI} "ในเครื่องมี ${PRODUCTNAME} $0 ซึ่งใหม่กว่าตัวติดตั้งนี้ (${VERSION})$\r$\n$\r$\nกด ติดตั้ง แล้วจะถามก่อนว่าจะทำยังไงกับเวอร์ชันที่ใหม่กว่า"
-  LangString oneClickButton ${LANG_THAI} "ติดตั้ง"
-!endif
-!ifdef LANG_ENGLISH
-  LangString oneClickTitle ${LANG_ENGLISH} "Install ${PRODUCTNAME}"
-  LangString oneClickText ${LANG_ENGLISH} "Mamori, a little marshmallow at the top of your screen, keeps an eye on Claude Code, Codex and Antigravity for you.$\r$\n$\r$\nPress Install and wait a moment. ${PRODUCTNAME} opens by itself when it's done.$\r$\n$\r$\nInstalled for this user, no administrator rights needed, with shortcuts on the desktop and in the Start Menu."
-  LangString oneClickUpdateTitle ${LANG_ENGLISH} "Update ${PRODUCTNAME}"
-  LangString oneClickUpdateText ${LANG_ENGLISH} "${PRODUCTNAME} $0 is already installed.$\r$\n$\r$\nPress Install to update to ${VERSION}. Your settings and agent connections stay as they are.$\r$\n$\r$\nIf ${PRODUCTNAME} is open, it is closed while installing and opened again when done."
-  LangString oneClickAgainTitle ${LANG_ENGLISH} "Reinstall ${PRODUCTNAME}"
-  LangString oneClickAgainText ${LANG_ENGLISH} "${PRODUCTNAME} ${VERSION}, this very version, is already installed.$\r$\n$\r$\nPress Install to install it again over itself (for example if its files are damaged). Your settings and agent connections stay as they are.$\r$\n$\r$\nIf ${PRODUCTNAME} is open, it is closed while installing and opened again when done."
-  LangString oneClickOlderText ${LANG_ENGLISH} "${PRODUCTNAME} $0 is installed, which is newer than this installer (${VERSION}).$\r$\n$\r$\nPress Install and you will be asked what to do with the newer version first."
-  LangString oneClickButton ${LANG_ENGLISH} "Install"
-!endif
 
 Function .onInit
   ${GetOptions} $CMDLINE "/P" $PassiveMode

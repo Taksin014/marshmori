@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ติดตั้ง Marshmori</title>
+<meta name="description" content="Mamori มาร์ชแมลโลว์ตัวน้อยบนขอบจอ คอยดู Claude Code, Codex และ Antigravity ให้คุณ ติดตั้งฟรีบน Windows">
+<link rel="icon" type="image/png" href="mamori.png">
+<meta property="og:title" content="ติดตั้ง Marshmori">
+<meta property="og:description" content="มาร์ชแมลโลว์ตัวน้อยบนขอบจอ คอยดู Claude Code, Codex และ Antigravity ให้คุณ">
+<meta property="og:image" content="https://taksin014.github.io/marshmori/mamori.png">
+<style>
+  /* Marshmallow colours: cream, cocoa and a little sprout green. */
+  :root {
+    --bg: #fbf6ef;
+    --card: #ffffff;
+    --text: #3b2a22;
+    --muted: #7d6a60;
+    --line: rgba(59, 42, 34, 0.1);
+    --accent: #3e8e5a;
+    --accent-hover: #357b4e;
+    --accent-text: #ffffff;
+    --soft: #f1e8dc;
+    --warn-bg: #eef4ff;
+    --warn-line: #c9d8f5;
+    --shadow: 0 18px 50px rgba(80, 50, 30, 0.12);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1513;
+      --card: #241d1a;
+      --text: #f4ebe2;
+      --muted: #b3a296;
+      --line: rgba(244, 235, 226, 0.1);
+      --accent: #5bb57b;
+      --accent-hover: #6cc68c;
+      --accent-text: #0f1a13;
+      --soft: #2e2622;
+      --warn-bg: #1d2433;
+      --warn-line: #33405c;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI Variable Text", "Segoe UI", "Leelawadee UI", "Noto Sans Thai", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 16px 56px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 36px; }
+  header img { width: 44px; height: 44px; }
+  header b { font-size: 20px; letter-spacing: 0.2px; }
+  header a { margin-left: auto; color: var(--muted); font-size: 15px; text-decoration: none; }
+  header a:hover { color: var(--text); }
+
+  .hero { text-align: center; }
+  .hero img.mamori { width: 132px; height: 132px; filter: drop-shadow(0 10px 18px rgba(80, 50, 30, 0.18)); }
+  h1 { font-size: clamp(28px, 6vw, 44px); line-height: 1.25; margin: 14px 0 10px; text-wrap: balance; }
+  .nobr { white-space: nowrap; }
+  .lead { color: var(--muted); font-size: 18px; max-width: 560px; margin: 0 auto 30px; text-wrap: pretty; }
+
+  .install {
+    display: inline-flex; align-items: center; justify-content: center; gap: 12px;
+    min-height: 64px; padding: 0 36px; border-radius: 999px;
+    background: var(--accent); color: var(--accent-text);
+    font-size: 21px; font-weight: 700; text-decoration: none;
+    box-shadow: 0 10px 26px rgba(62, 142, 90, 0.35);
+    transition: background 0.15s, transform 0.12s;
+  }
+  .install:hover { background: var(--accent-hover); }
+  .install:active { transform: scale(0.97); }
+  .install:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+  .install svg { width: 24px; height: 24px; }
+  .meta { color: var(--muted); font-size: 14.5px; margin-top: 12px; }
+  .notwin {
+    display: none; margin: 18px auto 0; max-width: 520px;
+    background: var(--soft); border-radius: 14px; padding: 12px 16px; font-size: 15.5px;
+  }
+  .notwin.show { display: block; }
+
+  .shot { margin: 40px 0 8px; border-radius: 20px; overflow: hidden; box-shadow: var(--shadow); background: #3a3570; }
+  .shot img { display: block; width: 100%; height: auto; }
+  .caption { text-align: center; color: var(--muted); font-size: 14.5px; }
+
+  section { margin-top: 48px; }
+  h2 { font-size: 24px; margin: 0 0 16px; }
+  ol.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+  ol.steps li {
+    display: flex; gap: 14px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px;
+  }
+  .num {
+    flex-shrink: 0; width: 32px; height: 32px; border-radius: 10px;
+    display: grid; place-items: center; background: var(--soft); font-weight: 700;
+  }
+  .smartscreen {
+    margin-top: 14px; background: var(--warn-bg); border: 1px solid var(--warn-line);
+    border-radius: 16px; padding: 14px 16px; font-size: 15.5px;
+  }
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  .feature { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  .feature b { display: block; margin-bottom: 4px; }
+  .feature span { color: var(--muted); font-size: 15.5px; }
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14.5px; }
+  footer a { color: inherit; }
+  kbd {
+    font: inherit; font-weight: 600; background: var(--soft); border-radius: 6px; padding: 1px 7px;
+    border: 1px solid var(--line);
+  }
+  @media (prefers-reduced-motion: reduce) { .install { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="mamori.png" alt="" width="44" height="44">
+    <b>Marshmori</b>
+    <a href="https://github.com/Taksin014/marshmori">GitHub</a>
+  </header>
+
+  <div class="hero">
+    <img class="mamori" src="mamori.png" alt="Mamori" width="132" height="132">
+    <h1>Mamori อยู่บนขอบจอ<br>คอยดู AI <span class="nobr">ช่วยเขียนโค้ดให้คุณ</span></h1>
+    <p class="lead">มาร์ชแมลโลว์ตัวน้อยที่บอกเมื่อ Claude Code, Codex หรือ Antigravity ขออนุมัติ ถามคำถาม ทำงานเสร็จ หรือเจอปัญหา แล้วให้คุณกดตอบได้ตรงนั้นเลย</p>
+
+    <a class="install" id="install" href="https://github.com/Taksin014/marshmori/releases/latest/download/Marshmori-Setup.exe">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>
+      ติดตั้ง Marshmori
+    </a>
+    <div class="meta" id="meta">ฟรี · Windows 10 / 11 (64-bit) · ไม่ต้องใช้สิทธิ์ผู้ดูแลเครื่อง</div>
+    <div class="notwin" id="notwin">Marshmori ใช้ได้บน Windows เท่านั้น เปิดหน้านี้จากคอมพิวเตอร์ Windows แล้วกด <b>ติดตั้ง Marshmori</b> ได้เลย</div>
+  </div>
+
+  <div class="shot">
+    <img src="https://raw.githubusercontent.com/Taksin014/marshmori/main/previews/marshmori-boing-open.gif" alt="แถบของ Mamori ที่ขอบบนจอ ค่อย ๆ ขยายออกมาแสดงงานของ agent" loading="lazy" width="540" height="248">
+  </div>
+  <p class="caption">ชี้เมาส์ที่ขอบบนจอ แถบจะเด้งออกมาบอกว่า agent ทำอะไรอยู่</p>
+
+  <section>
+    <h2>ติดตั้งยังไง</h2>
+    <ol class="steps">
+      <li><span class="num">1</span><span>กดปุ่ม <b>ติดตั้ง Marshmori</b> ด้านบน</span></li>
+      <li><span class="num">2</span><span>เปิดไฟล์ <b>Marshmori-Setup.exe</b> ที่ดาวน์โหลดมา (กดที่ไฟล์ในแถบดาวน์โหลดของเบราว์เซอร์ได้เลย)</span></li>
+      <li><span class="num">3</span><span>เสร็จแล้ว ไม่ต้องกดอะไรอีก Marshmori ติดตั้งเองแล้วโผล่ขึ้นมาที่ขอบบนของจอ มีไอคอนบนเดสก์ท็อปและใน Start Menu ให้</span></li>
+    </ol>
+    <div class="smartscreen">
+      <b>ถ้ามีหน้าต่างสีน้ำเงิน "Windows ป้องกันพีซีของคุณ"</b><br>
+      กด <kbd>ข้อมูลเพิ่มเติม</kbd> แล้วกด <kbd>เรียกใช้ต่อไป</kbd> — Windows เตือนแบบนี้กับโปรแกรมใหม่ที่ยังไม่ได้เซ็นดิจิทัล ดาวน์โหลดจากหน้านี้หรือ GitHub ของ Marshmori เท่านั้น
+    </div>
+    <p class="meta">อัปเดตเวอร์ชันใหม่ก็ทำแบบเดียวกัน การตั้งค่าเดิมอยู่ครบ</p>
+  </section>
+
+  <section>
+    <h2>Mamori ช่วยอะไรได้</h2>
+    <div class="features">
+      <div class="feature"><b>เห็นว่า agent ทำอะไรอยู่</b><span>ทั้งใน terminal, VS Code และ Antigravity โดยไม่ต้องสลับหน้าต่าง</span></div>
+      <div class="feature"><b>กดอนุญาตและตอบคำถาม</b><span>การ์ดขึ้นที่แถบ หรือ Mamori ยืดคอมาถึงข้างเมาส์ กดตอบแล้ว agent ทำต่อทันที</span></div>
+      <div class="feature"><b>สั่งงานผ่าน Mamori</b><span>เลือก agent กับโฟลเดอร์ พิมพ์งาน แล้วให้ทำเบื้องหลัง ไม่ต้องใส่ API key</span></div>
+    </div>
+  </section>
+
+  <footer>
+    ใช้ได้ฟรี ทั้งใช้ส่วนตัวและใช้ทำงาน · โค้ด ชื่อ และตัวละคร Marshmori / Mamori สงวนลิขสิทธิ์ (<a href="https://github.com/Taksin014/marshmori/blob/main/LICENSE">LICENSE</a>)<br>
+    <a href="https://github.com/Taksin014/marshmori/releases">เวอร์ชันทั้งหมดและบันทึกการเปลี่ยนแปลง</a> · © 2026 Taksin Kaewwongsa
+  </footer>
+</main>
+<script>
+  // Not on Windows: say so under the button (the installer only runs on Windows).
+  (function () {
+    var ua = navigator.userAgent || "";
+    var windows = /Windows NT/i.test(ua) || (navigator.userAgentData && navigator.userAgentData.platform === "Windows");
+    if (!windows) document.getElementById("notwin").classList.add("show");
+  })();
+
+  // The latest version and its size under the button (the button itself always works).
+  fetch("https://api.github.com/repos/Taksin014/marshmori/releases/latest")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (rel) {
+      if (!rel || !rel.tag_name) return;
+      var asset = (rel.assets || []).filter(function (a) { return a.name === "Marshmori-Setup.exe"; })[0];
+      var size = asset ? " · " + (asset.size / 1048576).toFixed(1) + " MB" : "";
+      var version = rel.tag_name.replace(/^v/, "");
+      document.getElementById("meta").textContent =
+        "เวอร์ชัน " + version + size + " · ฟรี · Windows 10 / 11 (64-bit) · ไม่ต้องใช้สิทธิ์ผู้ดูแลเครื่อง";
+    })
+    .catch(function () {});
+</script>
+</body>
+</html>
