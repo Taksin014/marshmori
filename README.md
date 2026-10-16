@@ -314,4 +314,6 @@ npm run typecheck
 ไอเดียแถบด้านบนจอได้แรงบันดาลใจจาก [Coucou](https://github.com/Louis-CFM/coucou) (MIT) ดู `THIRD_PARTY_NOTICES.md`
 ตัวละคร Marshmori ชื่อ ไอคอน และเสียงของแอปออกแบบใหม่ทั้งหมด
 
-© 2026 Taksin Kaewwongsa — สงวนลิขสิทธิ์ทั้งหมด (All rights reserved) ห้ามคัดลอก ดัดแปลง หรือเผยแพร่โดยไม่ได้รับอนุญาต ดู [`LICENSE`](LICENSE)
+**ใช้ได้ฟรี**: ทุกคนดาวน์โหลดตัวติดตั้งทางการจากหน้า [Releases](https://github.com/Taksin014/marshmori/releases/latest) ไปติดตั้งและใช้งานได้ฟรี ทั้งใช้ส่วนตัวและใช้ทำงาน
+
+© 2026 Taksin Kaewwongsa — ส่วนอื่นสงวนลิขสิทธิ์ทั้งหมด (All rights reserved): ห้ามคัดลอก ดัดแปลง หรือเผยแพร่โค้ด ชื่อ และตัวละคร Marshmori / Mamori รวมถึงนำตัวติดตั้งไปให้ดาวน์โหลดที่อื่น โดยไม่ได้รับอนุญาต ดู [`LICENSE`](LICENSE)

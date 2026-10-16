@@ -4,10 +4,21 @@ Copyright (c) 2026 Taksin Kaewwongsa (github.com/Taksin014). All rights reserved
 This repository, including its source code, the Marshmori / Mamori character, name,
 artwork, icons, animations, sounds and documentation, is proprietary.
 
-No license is granted. Without prior written permission from the copyright holder,
-you may not copy, modify, merge, publish, distribute, sublicense, sell, or create
-derivative works from any part of this repository, in whole or in part, and you may
-not use the Marshmori / Mamori name or character.
+PERMISSION TO USE THE APP
+
+Anyone may, free of charge, download the official Marshmori installers published on
+this repository's Releases page (https://github.com/Taksin014/marshmori/releases),
+install them on their own computers, and use the installed app, for personal or work
+purposes. This permission covers the official installers as published, unmodified.
+
+EVERYTHING ELSE IS RESERVED
+
+Apart from the permission above, no license is granted. Without prior written
+permission from the copyright holder, you may not copy, modify, merge, publish,
+distribute, sublicense, sell, or create derivative works from any part of this
+repository, in whole or in part (this includes putting the installers up for download
+anywhere else: link to the Releases page instead), and you may not use the
+Marshmori / Mamori name or character.
 
 Viewing this repository on GitHub does not grant any rights beyond those required
 by GitHub's Terms of Service.
@@ -16,10 +27,24 @@ Third-party portions listed in THIRD_PARTY_NOTICES.md remain under their own
 licenses; this notice does not restrict the rights those licenses grant to them.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY ARISING FROM THE SOFTWARE OR ITS USE.
 
 ---
 
-สงวนลิขสิทธิ์ทั้งหมด ห้ามคัดลอก แก้ไข เผยแพร่ จำหน่าย หรือนำโค้ด ตัวละคร ชื่อ ภาพ
-และเสียงของ Marshmori / Mamori ไปใช้หรือดัดแปลง ไม่ว่าทั้งหมดหรือบางส่วน
-โดยไม่ได้รับอนุญาตเป็นลายลักษณ์อักษรจากเจ้าของลิขสิทธิ์
+Marshmori (Mamori) — สงวนลิขสิทธิ์ © 2026 Taksin Kaewwongsa
+
+อนุญาตให้ใช้แอป
+ทุกคนดาวน์โหลดตัวติดตั้ง Marshmori ทางการจากหน้า Releases ของ repository นี้
+(https://github.com/Taksin014/marshmori/releases) ไปติดตั้งในคอมพิวเตอร์ของตัวเอง
+และใช้งานได้ฟรี ทั้งใช้ส่วนตัวและใช้ทำงาน
+(เฉพาะตัวติดตั้งทางการตามที่เผยแพร่ โดยไม่ได้ดัดแปลง)
+
+นอกจากนั้นสงวนลิขสิทธิ์ทั้งหมด
+ห้ามคัดลอก แก้ไข เผยแพร่ จำหน่าย หรือนำโค้ด ตัวละคร ชื่อ ภาพ และเสียงของ
+Marshmori / Mamori ไปใช้หรือดัดแปลง ไม่ว่าทั้งหมดหรือบางส่วน รวมถึงนำตัวติดตั้งไป
+ให้ดาวน์โหลดที่อื่น (ให้ลิงก์มาที่หน้า Releases แทน) โดยไม่ได้รับอนุญาตเป็นลายลักษณ์อักษร
+จากเจ้าของลิขสิทธิ์
 (ยกเว้นส่วนของบุคคลที่สามใน THIRD_PARTY_NOTICES.md ซึ่งเป็นไปตามสัญญาอนุญาตของส่วนนั้น)
+
+ซอฟต์แวร์นี้ให้ใช้ "ตามสภาพ" โดยไม่มีการรับประกันใด ๆ
