@@ -3,7 +3,7 @@
 // Windows: settings and endpoint.json in %APPDATA%\Marshmori, the hook relay and the
 // log in %LOCALAPPDATA%\Marshmori. The relay (hook/src/main.rs) computes the same data
 // directory on its own, so the two must stay in sync. MARSHMORI_DATA_DIR overrides
-// it for tests. (Up to 0.3 the app was called AIMoji: see `migrate_from_aimoji`.)
+// it for tests.
 
 use std::path::PathBuf;
 
@@ -64,35 +64,6 @@ fn roaming_base() -> PathBuf {
     #[cfg(not(windows))]
     {
         std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home_dir().join(".local").join("share"))
-    }
-}
-
-/// Where AIMoji (this app's name up to 0.3) kept its settings.
-pub fn legacy_data_dir() -> Option<PathBuf> {
-    if let Some(dir) = std::env::var_os("MARSHMORI_LEGACY_DIR") {
-        return Some(PathBuf::from(dir));
-    }
-    #[cfg(windows)]
-    let name = "AIMoji";
-    #[cfg(not(windows))]
-    let name = "aimoji";
-    Some(roaming_base().join(name))
-}
-
-/// Takes over AIMoji's settings (your choices and "always allow" rules) the first
-/// time Marshmori starts. The old folder is left as it was.
-pub fn migrate_from_aimoji() -> bool {
-    let new = settings_file();
-    if new.exists() {
-        return false;
-    }
-    let Some(old) = legacy_data_dir().map(|d| d.join("settings.json")) else { return false };
-    if std::env::var_os("MARSHMORI_DATA_DIR").is_some() && std::env::var_os("MARSHMORI_LEGACY_DIR").is_none() {
-        return false;
-    }
-    match std::fs::read(&old) {
-        Ok(bytes) => write_atomic(&new, &bytes).is_ok(),
-        Err(_) => false,
     }
 }
 

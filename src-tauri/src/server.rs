@@ -36,24 +36,6 @@ pub fn random_token() -> String {
     out
 }
 
-/// An agent still has AIMoji's old relay in its hooks (its config couldn't be moved
-/// over): keep an endpoint.json where that relay looks too, so it still reaches us.
-static LEGACY_RELAYS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-pub fn set_legacy_relays(on: bool) {
-    LEGACY_RELAYS.store(on, std::sync::atomic::Ordering::Relaxed);
-}
-
-fn endpoint_files() -> Vec<std::path::PathBuf> {
-    let mut files = vec![paths::endpoint_file()];
-    if LEGACY_RELAYS.load(std::sync::atomic::Ordering::Relaxed) {
-        if let Some(dir) = paths::legacy_data_dir().filter(|d| d.is_dir()) {
-            files.push(dir.join("endpoint.json"));
-        }
-    }
-    files
-}
-
 pub fn write_endpoint(ep: &Endpoint, wait_secs: u64) -> Result<(), String> {
     let json = serde_json::json!({
         "port": ep.port,
@@ -62,23 +44,15 @@ pub fn write_endpoint(ep: &Endpoint, wait_secs: u64) -> Result<(), String> {
         "pid": std::process::id(),
         "version": env!("CARGO_PKG_VERSION"),
     });
-    let mut result = Ok(());
-    for (i, file) in endpoint_files().into_iter().enumerate() {
-        let written = paths::write_atomic(&file, json.to_string().as_bytes()).map_err(|e| e.to_string());
-        if i == 0 {
-            result = written;
-        }
-    }
-    result
+    paths::write_atomic(&paths::endpoint_file(), json.to_string().as_bytes()).map_err(|e| e.to_string())
 }
 
 /// Removes endpoint.json if it is still ours, so relays stop trying at once.
 pub fn remove_endpoint(ep: &Endpoint) {
-    for path in endpoint_files() {
-        if let Ok(text) = std::fs::read_to_string(&path) {
-            if text.contains(&ep.token) {
-                let _ = std::fs::remove_file(path);
-            }
+    let path = paths::endpoint_file();
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        if text.contains(&ep.token) {
+            let _ = std::fs::remove_file(path);
         }
     }
 }
@@ -150,9 +124,7 @@ fn handle(app: &AppHandle, mut req: Request, token: &str, port: u16) {
     let host_ok = header(&req, "Host")
         .map(|h| h == format!("127.0.0.1:{port}") || h == format!("localhost:{port}"))
         .unwrap_or(false);
-    // AIMoji (0.3 and before) relays still say it the old way until their hooks move.
     let token_ok = header(&req, "X-Marshmori-Token")
-        .or_else(|| header(&req, "X-AIMoji-Token"))
         .map(|t| same_secret(t, token))
         .unwrap_or(false);
     if !host_ok || !token_ok {

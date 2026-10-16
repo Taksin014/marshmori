@@ -188,7 +188,7 @@ fn main() {
     // Marshmori's own side chat runs these agents' CLIs. Their hooks fire there too,
     // and must not report back to Marshmori (the chat would show up as a session, or
     // wait for an approval card). Read what the agent sends, then step aside.
-    if std::env::var_os("MARSHMORI_INTERNAL").is_some() || std::env::var_os("AIMOJI_INTERNAL").is_some() {
+    if std::env::var_os("MARSHMORI_INTERNAL").is_some() {
         let _ = std::io::stdin().take(MAX_STDIN).read_to_end(&mut Vec::new());
         finish(None, fallback)
     }

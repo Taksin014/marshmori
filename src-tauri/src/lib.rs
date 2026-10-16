@@ -532,8 +532,6 @@ pub fn run() {
         return;
     }
     let launch_request = open_request(&argv);
-    // Up to 0.3 the app was called AIMoji: its settings come along the first time.
-    let took_over = paths::migrate_from_aimoji();
     let settings = settings::load();
     let first_run = !settings.onboarded;
     let island_state = Arc::new(island::IslandState::default());
@@ -610,21 +608,11 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
             log::line(format!("Marshmori {} starting", env!("CARGO_PKG_VERSION")));
-            if took_over {
-                log::line("took over AIMoji's settings");
-            }
 
             installer::ensure_relay(&handle);
-            // Hooks AIMoji installed now point at Marshmori's relay. Any that couldn't be
-            // moved keep working: their old relay still finds us (see server.rs).
-            let moved = installer::migrate_legacy();
-            server::set_legacy_relays(installer::legacy_left());
-            if !moved.is_empty() {
-                notify::hooks_moved(&handle, &moved);
-            }
             // Hooks an older Marshmori wrote get today's shape (0.5: Claude Code's
             // PreToolUse waits like a prompt, for approvals in an IDE).
-            let updated: Vec<_> = installer::upgrade_outdated().into_iter().filter(|a| !moved.contains(a)).collect();
+            let updated: Vec<_> = installer::upgrade_outdated();
             if !updated.is_empty() {
                 notify::hooks_updated(&handle, &updated);
             }
@@ -644,11 +632,6 @@ pub fn run() {
                 .collect();
             if !connected.is_empty() && !first_run {
                 notify::hooks_connected(&handle, &connected);
-            }
-            // AIMoji's "start with Windows" entry goes; Marshmori takes its place when the
-            // setting (carried over with the rest) says so.
-            if platform::remove_legacy_autostart() {
-                log::line("removed AIMoji from start-up");
             }
             let autostart = handle.state::<AppState>().settings.lock().unwrap().autostart;
             if autostart && !handle.autolaunch().is_enabled().unwrap_or(true) {

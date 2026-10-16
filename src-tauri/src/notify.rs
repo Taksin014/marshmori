@@ -15,19 +15,6 @@ fn show(app: &AppHandle, title: &str, body: &str) {
     let _ = app.notification().builder().title(title).body(body).show();
 }
 
-/// After the rename from AIMoji: the agents' hooks were moved to Marshmori's relay.
-/// Codex asks you to trust changed hooks again, so say so (this one is always shown).
-pub fn hooks_moved(app: &AppHandle, agents: &[crate::agents::Agent]) {
-    let names: Vec<&str> = agents.iter().map(|a| a.label()).collect();
-    let codex = agents.contains(&crate::agents::Agent::Codex);
-    let body = if codex {
-        format!("ย้าย hooks ของ {} มาใช้ Marshmori แล้ว — เปิด Codex แล้วพิมพ์ /hooks เพื่อกด Trust อีกครั้ง", names.join(", "))
-    } else {
-        format!("ย้าย hooks ของ {} มาใช้ Marshmori แล้ว ใช้ได้ทันที", names.join(", "))
-    };
-    show(app, "AIMoji เปลี่ยนชื่อเป็น Marshmori", &body);
-}
-
 /// A new version changed how our hooks are written (0.5: Claude Code's PreToolUse
 /// waits for the island in an IDE). Sessions started before keep the old ones.
 pub fn hooks_updated(app: &AppHandle, agents: &[crate::agents::Agent]) {

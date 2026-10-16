@@ -814,7 +814,6 @@ fn run(app: &AppHandle, id: &str, p: Provider, program: &Path, cwd: &Path, promp
         .current_dir(cwd)
         .env("MARSHMORI_TASK", id)
         .env_remove("MARSHMORI_INTERNAL")
-        .env_remove("AIMOJI_INTERNAL")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

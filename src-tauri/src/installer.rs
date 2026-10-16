@@ -21,11 +21,8 @@ use tauri::{AppHandle, Manager};
 use crate::agents::Agent;
 use crate::paths;
 
-/// What our hook commands contain: the relay's name. Up to 0.3 the app was AIMoji and
-/// its relay aimoji-hook; those entries are ours too (they get replaced, see
-/// `migrate_legacy`).
-const MARKERS: &[&str] = &["marshmori-hook", "aimoji-hook"];
-const LEGACY_MARKER: &str = "aimoji-hook";
+/// What our hook commands contain: the relay's name.
+const MARKERS: &[&str] = &["marshmori-hook"];
 
 /// PreToolUse waits as long as a permission prompt: in an IDE's panel and in Mamori's
 /// own tasks it is where the island asks (see gate.rs). Everywhere else the relay
@@ -64,9 +61,8 @@ const ANTIGRAVITY_EVENTS: &[(&str, u64, bool)] = &[
     ("Stop", 10, false),
 ];
 
-/// Key of our group inside Antigravity's hooks.json (and AIMoji's, before).
+/// Key of our group inside Antigravity's hooks.json.
 const ANTIGRAVITY_GROUP: &str = "marshmori";
-const LEGACY_GROUP: &str = "aimoji";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -285,7 +281,6 @@ pub fn merged(agent: Agent, existing: &Value, relay: &Path) -> Result<Value, Str
                 let entry = if *tool_event { json!([{ "matcher": "*", "hooks": [handler] }]) } else { json!([handler]) };
                 group.insert((*event).to_string(), entry);
             }
-            root.remove(LEGACY_GROUP);
             root.insert(ANTIGRAVITY_GROUP.into(), Value::Object(group));
         }
     }
@@ -307,7 +302,6 @@ pub fn without_ours(agent: Agent, existing: &Value) -> Value {
         }
         Agent::Antigravity => {
             root.remove(ANTIGRAVITY_GROUP);
-            root.remove(LEGACY_GROUP);
         }
     }
     Value::Object(root)
@@ -361,7 +355,7 @@ fn our_commands(agent: Agent, root: &Value) -> Vec<String> {
         }
     };
     let groups: Vec<&Map<String, Value>> = match agent {
-        Agent::Antigravity => [ANTIGRAVITY_GROUP, LEGACY_GROUP].iter().filter_map(|g| root.get(*g).and_then(Value::as_object)).collect(),
+        Agent::Antigravity => root.get(ANTIGRAVITY_GROUP).and_then(Value::as_object).into_iter().collect(),
         _ => root.get("hooks").and_then(Value::as_object).into_iter().collect(),
     };
     for events in groups {
@@ -430,11 +424,6 @@ pub fn install_detected_except(off: &[String]) -> Vec<(Agent, Result<String, Str
         .collect()
 }
 
-/// AIMoji's hooks (this app's name up to 0.3) are still in the agent's config.
-fn has_legacy(agent: Agent, root: &Value) -> bool {
-    our_commands(agent, root).iter().any(|c| c.contains(LEGACY_MARKER)) || (agent == Agent::Antigravity && root.get(LEGACY_GROUP).is_some())
-}
-
 // ── Public API ──────────────────────────────────────────────────────────────────
 
 pub fn status(agent: Agent) -> HookStatus {
@@ -500,34 +489,6 @@ pub fn uninstall(agent: Agent) -> Result<String, String> {
         Some(b) => format!("ถอนแล้ว (สำรองไฟล์เดิมไว้ที่ {})", b.display()),
         None => "ถอนแล้ว".into(),
     })
-}
-
-/// Moves hooks that AIMoji (0.3 and before) installed over to Marshmori's relay, so the
-/// agents keep reporting after the rename. Returns the agents that were moved.
-pub fn migrate_legacy() -> Vec<Agent> {
-    let mut moved = Vec::new();
-    if !paths::relay_path().exists() {
-        return moved;
-    }
-    for agent in Agent::ALL {
-        let Ok(root) = read_config(&config_path(agent)) else { continue };
-        if !has_legacy(agent, &root) {
-            continue;
-        }
-        match install(agent) {
-            Ok(_) => {
-                crate::log::line(format!("moved {}'s hooks from AIMoji to Marshmori", agent.id()));
-                moved.push(agent);
-            }
-            Err(err) => crate::log::line(format!("could not move {}'s AIMoji hooks: {err}", agent.id())),
-        }
-    }
-    moved
-}
-
-/// Some agent still runs AIMoji's old relay (its config couldn't be rewritten).
-pub fn legacy_left() -> bool {
-    Agent::ALL.iter().any(|a| read_config(&config_path(*a)).map(|root| has_legacy(*a, &root)).unwrap_or(false))
 }
 
 /// Copies the relay next to our data so hook configs can point at a path that never
@@ -672,39 +633,5 @@ mod tests {
     fn paths_with_spaces_are_quoted_for_unknown_shells() {
         assert_eq!(portable_exe(Path::new("/opt/marshmori/bin/marshmori-hook")), "/opt/marshmori/bin/marshmori-hook");
         assert_eq!(portable_exe(Path::new("/home/John Smith/marshmori-hook")), "\"/home/John Smith/marshmori-hook\"");
-    }
-
-    #[test]
-    fn aimoji_hooks_are_replaced_by_marshmori_ones() {
-        let old_relay = PathBuf::from("C:/Users/me/AppData/Local/AIMoji/bin/aimoji-hook.exe");
-        let other = json!({"type": "command", "command": "other-tool.exe"});
-        // What AIMoji 0.3 left in Claude Code's settings, next to someone else's hook.
-        let mut before = merged(Agent::Claude, &json!({}), &old_relay).unwrap();
-        before["hooks"]["Stop"].as_array_mut().unwrap().push(json!({"hooks": [other.clone()]}));
-        assert!(has_legacy(Agent::Claude, &before));
-        let after = merged(Agent::Claude, &before, &relay()).unwrap();
-        assert!(!has_legacy(Agent::Claude, &after));
-        let stop = after["hooks"]["Stop"].as_array().unwrap();
-        assert_eq!(stop.len(), 2, "one of ours, and the other tool's");
-        assert!(stop.iter().any(|e| e["hooks"][0] == other));
-        assert!(our_commands(Agent::Claude, &after).iter().all(|c| c.contains("marshmori-hook")));
-
-        // Codex: the same, in its own hooks.json.
-        let before = merged(Agent::Codex, &json!({}), &old_relay).unwrap();
-        assert!(has_legacy(Agent::Codex, &before));
-        let after = merged(Agent::Codex, &before, &relay()).unwrap();
-        assert!(!has_legacy(Agent::Codex, &after));
-        let commands = our_commands(Agent::Codex, &after);
-        assert!(!commands.is_empty() && commands.iter().all(|c| c.contains("marshmori-hook")));
-        assert_eq!(commands.len(), our_commands(Agent::Codex, &before).len(), "each old hook replaced, none doubled");
-
-        // Antigravity: the old group goes, the new one comes.
-        let before = json!({"aimoji": {"Stop": [{"type": "command", "command": "C:/x/aimoji-hook.exe --agent antigravity --event Stop"}]}, "mine": {}});
-        assert!(has_legacy(Agent::Antigravity, &before));
-        let after = merged(Agent::Antigravity, &before, &relay()).unwrap();
-        assert!(after.get("aimoji").is_none());
-        assert!(after["marshmori"].is_object());
-        assert!(after["mine"].is_object());
-        assert_eq!(without_ours(Agent::Antigravity, &before), json!({"mine": {}}));
     }
 }

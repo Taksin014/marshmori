@@ -1,5 +1,4 @@
-// Preferences, kept as plain JSON in %APPDATA%\Marshmori\settings.json (taken over
-// from %APPDATA%\AIMoji, the app's name up to 0.3, the first time: see paths.rs).
+// Preferences, kept as plain JSON in %APPDATA%\Marshmori\settings.json.
 // There are no secrets: the chat goes through the agents' own signed-in CLIs.
 
 use serde::{Deserialize, Serialize};
@@ -167,8 +166,8 @@ impl Settings {
     }
 }
 
-/// A file without a version comes from 0.1, when the app was still AIMoji (missing
-/// fields would otherwise take today's defaults, version included).
+/// A file without a version comes from 0.1 (missing fields would otherwise take
+/// today's defaults, version included).
 fn fill_missing(raw: &serde_json::Value, mut s: Settings) -> Settings {
     if raw.get("settingsVersion").is_none() {
         s.settings_version = 1;
@@ -243,7 +242,7 @@ mod tests {
 
     #[test]
     fn untouched_old_defaults_become_mamori() {
-        // What 0.1 (AIMoji) wrote on first run.
+        // What 0.1 wrote on first run.
         let (s, changed) = parse(br#"{"mascotName":"Moji","color":"mint","onboarded":true}"#);
         assert!(changed);
         assert_eq!(s.mascot_name, "Mamori");

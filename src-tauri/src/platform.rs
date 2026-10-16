@@ -201,12 +201,6 @@ mod imp {
         }
     }
 
-    /// Up to 0.3 this app was AIMoji, and it may still be set to start with Windows:
-    /// that entry goes, so the old app doesn't come back at the next sign-in.
-    pub fn remove_legacy_autostart() -> bool {
-        remove_run_value("AIMoji")
-    }
-
     /// Takes "start with Windows" out (the uninstaller asks for this).
     pub fn remove_autostart_entry() -> bool {
         remove_run_value("Marshmori")
@@ -312,10 +306,6 @@ mod imp {
     pub fn foreground_is_fullscreen(_island: &WebviewWindow) -> bool {
         false
     }
-    pub fn remove_legacy_autostart() -> bool {
-        false
-    }
-
     pub fn remove_autostart_entry() -> bool {
         false
     }

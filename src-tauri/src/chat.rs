@@ -147,11 +147,10 @@ pub fn find_program(program: &str) -> Option<PathBuf> {
     None
 }
 
-/// A command with no console window, that Marshmori's hooks ignore (AIMoji's old relay
-/// too, should an agent still have it).
+/// A command with no console window, that Marshmori's hooks ignore.
 fn command(program: &Path) -> Command {
     let mut c = quiet_command(program);
-    c.env("MARSHMORI_INTERNAL", "1").env("AIMOJI_INTERNAL", "1");
+    c.env("MARSHMORI_INTERNAL", "1");
     c
 }
 
